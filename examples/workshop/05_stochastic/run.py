@@ -42,10 +42,10 @@ from miniverse import (
 )
 from miniverse.cognition import AgentCognition, LLMExecutor
 
-
 # ============================================================================
 # STEP 1: Define STOCHASTIC Physics
 # ============================================================================
+
 
 class StochasticWorkshopRules(SimulationRules):
     """
@@ -68,9 +68,15 @@ class StochasticWorkshopRules(SimulationRules):
     def apply_tick(self, state: WorldState, tick: int) -> WorldState:
         updated = state.model_copy(deep=True)
 
-        backlog = updated.resources.get_metric("task_backlog", default=10, label="Tasks")
-        power = updated.resources.get_metric("power_kwh", default=100.0, unit="kWh", label="Battery")
-        breakdown = updated.environment.get_metric("equipment_status", default=100, unit="%", label="Equipment Health")
+        backlog = updated.resources.get_metric(
+            "task_backlog", default=10, label="Tasks"
+        )
+        power = updated.resources.get_metric(
+            "power_kwh", default=100.0, unit="kWh", label="Battery"
+        )
+        breakdown = updated.environment.get_metric(
+            "equipment_status", default=100, unit="%", label="Equipment Health"
+        )
 
         # STOCHASTIC EVENT 1: Random task arrivals
         # Instead of fixed "2 tasks every 3 ticks", it's random every tick
@@ -121,6 +127,7 @@ class StochasticWorkshopRules(SimulationRules):
 # STEP 2: Run Simulation (LLM Adapts to Stochastic World)
 # ============================================================================
 
+
 async def main():
     # Check for LLM configuration
     provider = os.getenv("LLM_PROVIDER")
@@ -155,16 +162,16 @@ async def main():
         resources=ResourceState(
             metrics={
                 "task_backlog": Stat(value=10, label="Task Backlog"),
-                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve")
+                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve"),
             }
         ),
         agents=[
             AgentStatus(
                 agent_id="adaptive_worker",
                 display_name="Adaptive Worker",
-                attributes={"energy": Stat(value=80, unit="%", label="Energy")}
+                attributes={"energy": Stat(value=80, unit="%", label="Energy")},
             ),
-        ]
+        ],
     )
 
     # ========================================
@@ -180,8 +187,11 @@ async def main():
             role="worker",
             personality="flexible and resilient",
             skills={"adaptation": "expert", "problem_solving": "expert"},
-            goals=["Maintain productivity despite unpredictability", "Preserve personal energy"],
-            relationships={}
+            goals=[
+                "Maintain productivity despite unpredictability",
+                "Preserve personal energy",
+            ],
+            relationships={},
         ),
     }
 
@@ -195,20 +205,56 @@ async def main():
             "name": "work",
             "action_type": "work",
             "description": "Work on current task",
-            "schema": {"action_type": "work", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "adaptive_worker", "tick": 1, "action_type": "work", "target": "ops", "parameters": {}, "reasoning": "Address backlog", "communication": None}],
+            "schema": {
+                "action_type": "work",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "adaptive_worker",
+                    "tick": 1,
+                    "action_type": "work",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Address backlog",
+                    "communication": None,
+                }
+            ],
         },
         {
             "name": "rest",
             "action_type": "rest",
             "description": "Rest to recover energy",
-            "schema": {"action_type": "rest", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "adaptive_worker", "tick": 2, "action_type": "rest", "target": "ops", "parameters": {}, "reasoning": "Recover from breakdown", "communication": None}],
+            "schema": {
+                "action_type": "rest",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "adaptive_worker",
+                    "tick": 2,
+                    "action_type": "rest",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Recover from breakdown",
+                    "communication": None,
+                }
+            ],
         },
     ]
 
     cognition_map = {
-        "adaptive_worker": AgentCognition(executor=LLMExecutor(template_name="default", available_actions=available_actions)),
+        "adaptive_worker": AgentCognition(
+            executor=LLMExecutor(
+                template_name="default", available_actions=available_actions
+            )
+        ),
     }
 
     agent_prompts = {
@@ -242,7 +288,7 @@ Your advantage: Intelligence to adapt, not control over randomness."""
         simulation_rules=StochasticWorkshopRules(seed=42),  # Seed for reproducibility
         agent_cognition=cognition_map,
         llm_provider=provider,
-        llm_model=model
+        llm_model=model,
     )
 
     print("Running 12 ticks with stochastic physics...\n")

@@ -45,11 +45,11 @@ DEFAULT_PROMPTS.register(
             "Full context JSON:\n{{context_json}}\n\n"
             "Example output:\n"
             "{\n"
-            "  \"steps\": [\n"
-            "    {\"description\": \"coordinate morning stand-up\", \"metadata\": {\"duration_minutes\": 45}},\n"
-            "    {\"description\": \"inspect life-support systems\", \"metadata\": {\"priority\": \"high\"}}\n"
+            '  "steps": [\n'
+            '    {"description": "coordinate morning stand-up", "metadata": {"duration_minutes": 45}},\n'
+            '    {"description": "inspect life-support systems", "metadata": {"priority": "high"}}\n'
             "  ],\n"
-            "  \"metadata\": {\"planning_horizon\": \"next 4 hours\"}\n"
+            '  "metadata": {"planning_horizon": "next 4 hours"}\n'
             "}\n\n"
             "Respond with JSON only."
         ),
@@ -66,8 +66,7 @@ DEFAULT_PROMPTS.register(
             "Available actions:\n{{action_catalog}}\n"
         ),
         user=(
-            "{{initial_state_agent_prompt}}\n\n"
-            "Perception:\n{{perception_json}}\n"
+            "{{initial_state_agent_prompt}}\n\n" "Perception:\n{{perception_json}}\n"
         ),
         description="Minimal default executor template using character/base/action_catalog placeholders.",
     )
@@ -86,80 +85,80 @@ DEFAULT_PROMPTS.register(
             "Recent memories:\n{{memories_text}}\n\n"
             "Additional context:\n{{context_summary}}\n\n"
             "Guidelines:\n"
-            "- Use agent_ids for agent targets and for communication.to (e.g., \"beta\"), not display names.\n"
-            "- If \"target\" refers to a location, use the location id (e.g., \"lab\").\n"
-            "- Include \"communication\" only for communicate actions; set it to null otherwise.\n"
+            '- Use agent_ids for agent targets and for communication.to (e.g., "beta"), not display names.\n'
+            '- If "target" refers to a location, use the location id (e.g., "lab").\n'
+            '- Include "communication" only for communicate actions; set it to null otherwise.\n'
             "- action_type can be custom; common values: communicate, work, move_to, rest, investigate, monitor.\n\n"
             "Example outputs (return one):\n\n"
             "Work action:\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"work\",\n"
-            "  \"target\": \"ops\",\n"
-            "  \"parameters\": {\"focus\": \"coordinate technicians\"},\n"
-            "  \"reasoning\": \"Need to follow up on the backlog and brief the team\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "work",\n'
+            '  "target": "ops",\n'
+            '  "parameters": {"focus": "coordinate technicians"},\n'
+            '  "reasoning": "Need to follow up on the backlog and brief the team",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Communicate action (use communication with to/message; to must be agent_id):\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"communicate\",\n"
-            "  \"target\": \"beta\",\n"
-            "  \"parameters\": null,\n"
-            "  \"reasoning\": \"Need to coordinate with teammate about the briefing\",\n"
-            "  \"communication\": {\"to\": \"beta\", \"message\": \"Hey, can we sync up about the morning briefing? I want to align on priorities.\"}\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "communicate",\n'
+            '  "target": "beta",\n'
+            '  "parameters": null,\n'
+            '  "reasoning": "Need to coordinate with teammate about the briefing",\n'
+            '  "communication": {"to": "beta", "message": "Hey, can we sync up about the morning briefing? I want to align on priorities."}\n'
             "}\n\n"
             "Move action:\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"move_to\",\n"
-            "  \"target\": \"lab\",\n"
-            "  \"parameters\": {\"speed\": \"normal\"},\n"
-            "  \"reasoning\": \"Head to the lab to review sensor data\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "move_to",\n'
+            '  "target": "lab",\n'
+            '  "parameters": {"speed": "normal"},\n'
+            '  "reasoning": "Head to the lab to review sensor data",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Rest action:\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"rest\",\n"
-            "  \"target\": null,\n"
-            "  \"parameters\": {},\n"
-            "  \"reasoning\": \"Low energy. Recuperate this tick.\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "rest",\n'
+            '  "target": null,\n'
+            '  "parameters": {},\n'
+            '  "reasoning": "Low energy. Recuperate this tick.",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Investigate action:\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"investigate\",\n"
-            "  \"target\": \"greenhouse\",\n"
-            "  \"parameters\": {\"subject\": \"sensor anomaly\"},\n"
-            "  \"reasoning\": \"Look into unusual humidity readings\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "investigate",\n'
+            '  "target": "greenhouse",\n'
+            '  "parameters": {"subject": "sensor anomaly"},\n'
+            '  "reasoning": "Look into unusual humidity readings",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Monitor action:\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"monitor\",\n"
-            "  \"target\": \"operations\",\n"
-            "  \"parameters\": {\"metric\": \"power\"},\n"
-            "  \"reasoning\": \"Track power fluctuations while team works on recyclers\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "monitor",\n'
+            '  "target": "operations",\n'
+            '  "parameters": {"metric": "power"},\n'
+            '  "reasoning": "Track power fluctuations while team works on recyclers",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Custom action (example):\n"
             "{\n"
-            "  \"agent_id\": \"lead\",\n"
-            "  \"tick\": 5,\n"
-            "  \"action_type\": \"study\",\n"
-            "  \"target\": null,\n"
-            "  \"parameters\": {\"topic\": \"botany\"},\n"
-            "  \"reasoning\": \"Prepare for tomorrow's greenhouse experiment\",\n"
-            "  \"communication\": null\n"
+            '  "agent_id": "lead",\n'
+            '  "tick": 5,\n'
+            '  "action_type": "study",\n'
+            '  "target": null,\n'
+            '  "parameters": {"topic": "botany"},\n'
+            '  "reasoning": "Prepare for tomorrow\'s greenhouse experiment",\n'
+            '  "communication": null\n'
             "}\n\n"
             "Return JSON only."
         ),
@@ -179,8 +178,8 @@ DEFAULT_PROMPTS.register(
             "Full context JSON:\n{{context_json}}\n\n"
             "Example output:\n"
             "{\n"
-            "  \"reflections\": [\n"
-            "    {\"content\": \"Coordinating early keeps the backlog manageable. Need to request more filters.\", \"importance\": 6}\n"
+            '  "reflections": [\n'
+            '    {"content": "Coordinating early keeps the backlog manageable. Need to request more filters.", "importance": 6}\n'
             "  ]\n"
             "}\n\n"
             "Respond with JSON only."

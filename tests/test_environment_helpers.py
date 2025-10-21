@@ -4,16 +4,16 @@ from miniverse.environment import (
     EnvironmentGraph,
     EnvironmentGrid,
     EnvironmentGridState,
+    GraphOccupancy,
     GridTile,
     GridTileState,
-    GraphOccupancy,
     LocationNode,
     get_visible_tiles,
-    render_ascii_window,
     grid_shortest_path,
+    render_ascii_window,
     shortest_path,
-    validate_grid_move,
     validate_graph_move,
+    validate_grid_move,
 )
 
 
@@ -106,7 +106,9 @@ def test_validate_graph_move():
     assert validate_graph_move(graph, occupancy, "kitchen", "bedroom", "alice") is True
 
     # Invalid: nodes not adjacent (kitchen -> bathroom requires going through bedroom)
-    assert validate_graph_move(graph, occupancy, "kitchen", "bathroom", "alice") is False
+    assert (
+        validate_graph_move(graph, occupancy, "kitchen", "bathroom", "alice") is False
+    )
 
     # Valid if we disable adjacency requirement
     assert (

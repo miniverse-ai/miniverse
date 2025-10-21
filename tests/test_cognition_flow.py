@@ -7,9 +7,9 @@ import pytest
 
 from miniverse import (
     AgentAction,
+    AgentCognition,
     AgentProfile,
     AgentStatus,
-    AgentCognition,
     EnvironmentState,
     Orchestrator,
     Plan,
@@ -22,12 +22,12 @@ from miniverse import (
     WorldState,
 )
 from miniverse.cognition.cadence import (
+    PLANNER_LAST_TICK_KEY,
+    REFLECTION_LAST_TICK_KEY,
     CognitionCadence,
     PlannerCadence,
     ReflectionCadence,
     TickInterval,
-    PLANNER_LAST_TICK_KEY,
-    REFLECTION_LAST_TICK_KEY,
 )
 from miniverse.schemas import AgentMemory
 
@@ -82,9 +82,13 @@ class RecordingMemory:
         return mem
 
     async def get_recent_memories(self, run_id, agent_id, limit=10):
-        return [mem.content for mem in self.records if mem.agent_id == agent_id][-limit:]
+        return [mem.content for mem in self.records if mem.agent_id == agent_id][
+            -limit:
+        ]
 
-    async def get_relevant_memories(self, run_id, agent_id, query, limit=5):  # pragma: no cover
+    async def get_relevant_memories(
+        self, run_id, agent_id, query, limit=5
+    ):  # pragma: no cover
         return []
 
     async def clear_agent_memories(self, run_id, agent_id):  # pragma: no cover
@@ -104,8 +108,15 @@ class ExecutorStub:
     def __init__(self):
         self.calls = []
 
-    async def choose_action(self, agent_id, perception, scratchpad, *, plan, plan_step, context):
-        self.calls.append((plan_step.description if plan_step else None, context.plan_state["current_index"]))
+    async def choose_action(
+        self, agent_id, perception, scratchpad, *, plan, plan_step, context
+    ):
+        self.calls.append(
+            (
+                plan_step.description if plan_step else None,
+                context.plan_state["current_index"],
+            )
+        )
         return AgentAction(
             agent_id=agent_id,
             tick=perception.tick,
@@ -188,7 +199,9 @@ async def test_cognition_pipeline(monkeypatch):
     async def fake_world_update(current_state, actions, tick, *args, **kwargs):
         return current_state.model_copy(update={"tick": tick})
 
-    monkeypatch.setattr("miniverse.orchestrator.process_world_update", fake_world_update)
+    monkeypatch.setattr(
+        "miniverse.orchestrator.process_world_update", fake_world_update
+    )
 
     await orchestrator.run(num_ticks=1)
 
@@ -264,7 +277,9 @@ async def test_cognition_cadence_respects_intervals(monkeypatch):
     async def fake_world_update(current_state, actions, tick, *args, **kwargs):
         return current_state.model_copy(update={"tick": tick})
 
-    monkeypatch.setattr("miniverse.orchestrator.process_world_update", fake_world_update)
+    monkeypatch.setattr(
+        "miniverse.orchestrator.process_world_update", fake_world_update
+    )
 
     await orchestrator.run(num_ticks=4)
 

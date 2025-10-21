@@ -24,7 +24,9 @@ from .run import run_simulation
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Monte Carlo workshop batch runner")
-    parser.add_argument("--runs", type=int, default=50, help="Number of simulations to execute")
+    parser.add_argument(
+        "--runs", type=int, default=50, help="Number of simulations to execute"
+    )
     parser.add_argument("--ticks", type=int, default=20, help="Ticks per simulation")
     parser.add_argument(
         "--base-seed",

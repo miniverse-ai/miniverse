@@ -28,10 +28,10 @@ from miniverse import (
 )
 from miniverse.cognition import AgentCognition
 
-
 # ============================================================================
 # STEP 1: Define Physics (How the world changes each tick)
 # ============================================================================
+
 
 class HelloWorldRules(SimulationRules):
     """
@@ -102,6 +102,7 @@ class HelloWorldRules(SimulationRules):
 # STEP 2: Define Agent Behavior (What agent does)
 # ============================================================================
 
+
 class AlwaysWorkExecutor:
     """
     This defines WHAT THE AGENT DOES each tick.
@@ -110,7 +111,9 @@ class AlwaysWorkExecutor:
     Later examples will show agents making decisions based on what they see!
     """
 
-    async def choose_action(self, agent_id, perception, scratchpad, *, plan, plan_step, context):
+    async def choose_action(
+        self, agent_id, perception, scratchpad, *, plan, plan_step, context
+    ):
         """
         Called every tick to ask: "What does this agent do now?"
 
@@ -126,16 +129,17 @@ class AlwaysWorkExecutor:
         # Create an action object
         # This tells the simulation "I want to perform the 'work' action"
         return AgentAction(
-            agent_id=agent_id,          # Who is doing this
-            tick=perception.tick,        # When (current tick number)
-            action_type="work",          # What action (could be: move, communicate, rest, etc.)
-            reasoning="I always work!"   # Why (helpful for debugging/logging)
+            agent_id=agent_id,  # Who is doing this
+            tick=perception.tick,  # When (current tick number)
+            action_type="work",  # What action (could be: move, communicate, rest, etc.)
+            reasoning="I always work!",  # Why (helpful for debugging/logging)
         )
 
 
 # ============================================================================
 # STEP 3: Run Simulation
 # ============================================================================
+
 
 async def main():
     """
@@ -175,9 +179,9 @@ async def main():
             AgentStatus(
                 agent_id="worker",
                 display_name="Worker",
-                attributes={}  # No attributes tracked for hello world
+                attributes={},  # No attributes tracked for hello world
             )
-        ]
+        ],
     )
 
     # ========================================
@@ -194,8 +198,8 @@ async def main():
         role="worker",
         personality="steady",
         skills={},  # No skills for hello world
-        goals=[],   # No goals for hello world
-        relationships={}  # No relationships for hello world
+        goals=[],  # No goals for hello world
+        relationships={},  # No relationships for hello world
     )
 
     # ========================================
@@ -208,7 +212,7 @@ async def main():
         executor=AlwaysWorkExecutor(),  # Our hardcoded "always work" logic
         planner=None,  # No planning needed (agent is purely reactive)
         reflection=None,  # No reflection needed (no memory synthesis)
-        scratchpad=None  # No working memory needed (agent has no state)
+        scratchpad=None,  # No working memory needed (agent has no state)
     )
 
     # ========================================
@@ -223,7 +227,7 @@ async def main():
         world_prompt="",  # No world LLM needed for hello world
         agent_prompts={"worker": "You are a worker"},  # Not used without LLM
         simulation_rules=HelloWorldRules(),  # Our physics rules
-        agent_cognition={"worker": cognition}  # How each agent thinks
+        agent_cognition={"worker": cognition},  # How each agent thinks
     )
 
     # ========================================

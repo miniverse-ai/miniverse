@@ -46,8 +46,12 @@ def test_agent_status_attribute_helper():
 
 
 def test_world_state_construction():
-    environment = EnvironmentState(metrics={"temp": Stat(value=-20, unit="°C", label="Outside")})
-    resources = ResourceState(metrics={"power": Stat(value=150.0, unit="kWh", label="Power")})
+    environment = EnvironmentState(
+        metrics={"temp": Stat(value=-20, unit="°C", label="Outside")}
+    )
+    resources = ResourceState(
+        metrics={"power": Stat(value=150.0, unit="kWh", label="Power")}
+    )
     agent = AgentStatus(agent_id="agent-1", location="operations")
 
     world_state = WorldState(
@@ -78,10 +82,12 @@ def test_world_event_generic_payload():
 
 
 def test_format_resource_summary_generic():
-    resources = ResourceState(metrics={
-        "power": Stat(value=120.5, unit="kWh", label="Power"),
-        "water": Stat(value=520.0, unit="L", label="Water"),
-    })
+    resources = ResourceState(
+        metrics={
+            "power": Stat(value=120.5, unit="kWh", label="Power"),
+            "water": Stat(value=520.0, unit="L", label="Water"),
+        }
+    )
     world_state = WorldState(
         tick=1,
         timestamp=datetime(2160, 3, 21, 11, 0, 0),

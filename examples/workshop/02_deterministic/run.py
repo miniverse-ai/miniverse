@@ -29,10 +29,10 @@ from miniverse import (
 )
 from miniverse.cognition import AgentCognition
 
-
 # ============================================================================
 # STEP 1: Define Physics (Resource dynamics)
 # ============================================================================
+
 
 class WorkshopRules(SimulationRules):
     """
@@ -48,8 +48,12 @@ class WorkshopRules(SimulationRules):
         updated = state.model_copy(deep=True)
 
         # Get shared resources
-        backlog = updated.resources.get_metric("task_backlog", default=10, label="Tasks")
-        power = updated.resources.get_metric("power_kwh", default=100.0, unit="kWh", label="Battery")
+        backlog = updated.resources.get_metric(
+            "task_backlog", default=10, label="Tasks"
+        )
+        power = updated.resources.get_metric(
+            "power_kwh", default=100.0, unit="kWh", label="Battery"
+        )
 
         # Count active workers (those doing work)
         active_workers = 0
@@ -88,6 +92,7 @@ class WorkshopRules(SimulationRules):
 # STEP 2: Define Agent Executors (Decision Logic)
 # ============================================================================
 
+
 class ThresholdExecutor:
     """
     Deterministic executor using threshold-based logic.
@@ -98,7 +103,9 @@ class ThresholdExecutor:
     - Otherwise: rest
     """
 
-    async def choose_action(self, agent_id, perception, scratchpad, *, plan, plan_step, context):
+    async def choose_action(
+        self, agent_id, perception, scratchpad, *, plan, plan_step, context
+    ):
         # Extract agent's current state from perception
         # Note: perception returns Stat objects directly, not dicts
         energy_stat = perception.personal_attributes.get("energy")
@@ -125,13 +132,14 @@ class ThresholdExecutor:
             agent_id=agent_id,
             tick=perception.tick,
             action_type=action_type,
-            reasoning=reasoning
+            reasoning=reasoning,
         )
 
 
 # ============================================================================
 # STEP 3: Run Simulation
 # ============================================================================
+
 
 async def main():
     print("=" * 60)
@@ -150,7 +158,7 @@ async def main():
         resources=ResourceState(
             metrics={
                 "task_backlog": Stat(value=10, label="Task Backlog"),
-                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve")
+                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve"),
             }
         ),
         agents=[
@@ -159,18 +167,18 @@ async def main():
                 display_name="Worker 1",
                 attributes={
                     "energy": Stat(value=80, unit="%", label="Energy"),
-                    "stress": Stat(value=20, unit="%", label="Stress")
-                }
+                    "stress": Stat(value=20, unit="%", label="Stress"),
+                },
             ),
             AgentStatus(
                 agent_id="worker2",
                 display_name="Worker 2",
                 attributes={
                     "energy": Stat(value=70, unit="%", label="Energy"),
-                    "stress": Stat(value=30, unit="%", label="Stress")
-                }
+                    "stress": Stat(value=30, unit="%", label="Stress"),
+                },
             ),
-        ]
+        ],
     )
 
     # ========================================
@@ -187,7 +195,7 @@ async def main():
             personality="diligent",
             skills={},
             goals=[],
-            relationships={}
+            relationships={},
         ),
         "worker2": AgentProfile(
             agent_id="worker2",
@@ -198,7 +206,7 @@ async def main():
             personality="pragmatic",
             skills={},
             goals=[],
-            relationships={}
+            relationships={},
         ),
     }
 
@@ -225,7 +233,7 @@ async def main():
         world_prompt="",
         agent_prompts={"worker1": "", "worker2": ""},
         simulation_rules=WorkshopRules(),
-        agent_cognition=cognition_map
+        agent_cognition=cognition_map,
     )
 
     print("Running 10 ticks...\n")

@@ -37,10 +37,10 @@ from miniverse import (
 )
 from miniverse.cognition import AgentCognition, LLMExecutor
 
-
 # ============================================================================
 # STEP 1: Define Physics (Same workshop rules)
 # ============================================================================
+
 
 class WorkshopRules(SimulationRules):
     """Physics for workshop with task backlog."""
@@ -48,8 +48,12 @@ class WorkshopRules(SimulationRules):
     def apply_tick(self, state: WorldState, tick: int) -> WorldState:
         updated = state.model_copy(deep=True)
 
-        backlog = updated.resources.get_metric("task_backlog", default=15, label="Tasks")
-        power = updated.resources.get_metric("power_kwh", default=100.0, unit="kWh", label="Battery")
+        backlog = updated.resources.get_metric(
+            "task_backlog", default=15, label="Tasks"
+        )
+        power = updated.resources.get_metric(
+            "power_kwh", default=100.0, unit="kWh", label="Battery"
+        )
 
         active_workers = 0
         for agent in updated.agents:
@@ -78,6 +82,7 @@ class WorkshopRules(SimulationRules):
 # ============================================================================
 # STEP 2: Run Simulation (Team of LLM Agents)
 # ============================================================================
+
 
 async def main():
     # Check for LLM configuration
@@ -109,26 +114,26 @@ async def main():
         resources=ResourceState(
             metrics={
                 "task_backlog": Stat(value=15, label="Task Backlog"),
-                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve")
+                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve"),
             }
         ),
         agents=[
             AgentStatus(
                 agent_id="leader",
                 display_name="Team Leader",
-                attributes={"energy": Stat(value=90, unit="%", label="Energy")}
+                attributes={"energy": Stat(value=90, unit="%", label="Energy")},
             ),
             AgentStatus(
                 agent_id="worker1",
                 display_name="Worker 1",
-                attributes={"energy": Stat(value=80, unit="%", label="Energy")}
+                attributes={"energy": Stat(value=80, unit="%", label="Energy")},
             ),
             AgentStatus(
                 agent_id="worker2",
                 display_name="Worker 2",
-                attributes={"energy": Stat(value=75, unit="%", label="Energy")}
+                attributes={"energy": Stat(value=75, unit="%", label="Energy")},
             ),
-        ]
+        ],
     )
 
     # ========================================
@@ -144,8 +149,12 @@ async def main():
             role="leader",
             personality="supportive and strategic",
             skills={"coordination": "expert", "task_management": "expert"},
-            goals=["Keep team healthy", "Maintain productivity", "Coordinate work effectively"],
-            relationships={"worker1": "mentors", "worker2": "mentors"}
+            goals=[
+                "Keep team healthy",
+                "Maintain productivity",
+                "Coordinate work effectively",
+            ],
+            relationships={"worker1": "mentors", "worker2": "mentors"},
         ),
         "worker1": AgentProfile(
             agent_id="worker1",
@@ -156,7 +165,7 @@ async def main():
             personality="enthusiastic and collaborative",
             skills={"technical_work": "proficient"},
             goals=["Do good work", "Support teammates", "Maintain energy"],
-            relationships={"leader": "reports_to", "worker2": "colleague"}
+            relationships={"leader": "reports_to", "worker2": "colleague"},
         ),
         "worker2": AgentProfile(
             agent_id="worker2",
@@ -167,7 +176,7 @@ async def main():
             personality="thoughtful and careful",
             skills={"technical_work": "proficient", "quality_control": "expert"},
             goals=["Deliver quality", "Avoid burnout", "Help team succeed"],
-            relationships={"leader": "reports_to", "worker1": "colleague"}
+            relationships={"leader": "reports_to", "worker1": "colleague"},
         ),
     }
 
@@ -182,27 +191,82 @@ async def main():
             "name": "work",
             "action_type": "work",
             "description": "Work on current task",
-            "schema": {"action_type": "work", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "leader", "tick": 1, "action_type": "work", "target": "ops", "parameters": {}, "reasoning": "Coordinate team", "communication": None}],
+            "schema": {
+                "action_type": "work",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "leader",
+                    "tick": 1,
+                    "action_type": "work",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Coordinate team",
+                    "communication": None,
+                }
+            ],
         },
         {
             "name": "rest",
             "action_type": "rest",
             "description": "Rest to recover energy",
-            "schema": {"action_type": "rest", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "worker1", "tick": 2, "action_type": "rest", "target": "ops", "parameters": {}, "reasoning": "Recover energy", "communication": None}],
+            "schema": {
+                "action_type": "rest",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "worker1",
+                    "tick": 2,
+                    "action_type": "rest",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Recover energy",
+                    "communication": None,
+                }
+            ],
         },
         {
             "name": "communicate",
             "action_type": "communicate",
             "description": "Send message to another agent",
-            "schema": {"action_type": "communicate", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": {"to": "<agent_id>", "message": "<string>"}},
-            "examples": [{"agent_id": "leader", "tick": 3, "action_type": "communicate", "target": "ops", "parameters": {}, "reasoning": "Coordinate", "communication": {"to": "worker2", "message": "Please rest if low energy"}}],
+            "schema": {
+                "action_type": "communicate",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": {"to": "<agent_id>", "message": "<string>"},
+            },
+            "examples": [
+                {
+                    "agent_id": "leader",
+                    "tick": 3,
+                    "action_type": "communicate",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Coordinate",
+                    "communication": {
+                        "to": "worker2",
+                        "message": "Please rest if low energy",
+                    },
+                }
+            ],
         },
     ]
 
     cognition_map = {
-        agent_id: AgentCognition(executor=LLMExecutor(template_name="default", available_actions=available_actions))
+        agent_id: AgentCognition(
+            executor=LLMExecutor(
+                template_name="default", available_actions=available_actions
+            )
+        )
         for agent_id in agents.keys()
     }
 
@@ -223,7 +287,6 @@ Available actions: work, rest
 Communication: Use the 'communication' field to send messages to the team. Keep messages brief and supportive.
 
 Be an active communicator - share updates, ask how others are doing, coordinate strategy.""",
-
         "worker1": """You are Jordan, an enthusiastic worker.
 
 Your role:
@@ -236,7 +299,6 @@ Available actions: work, rest
 Communication: Use the 'communication' field to chat with team. Be collaborative and positive.
 
 Stay engaged in team chat - share your status, respond to messages, coordinate with others.""",
-
         "worker2": """You are Sam, a thoughtful and careful worker.
 
 Your role:
@@ -263,7 +325,7 @@ Participate in team discussions - share concerns, respond to others, help coordi
         simulation_rules=WorkshopRules(),
         agent_cognition=cognition_map,
         llm_provider=provider,
-        llm_model=model
+        llm_model=model,
     )
 
     print("Running 8 ticks with team communication...\n")

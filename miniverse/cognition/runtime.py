@@ -11,12 +11,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Dict, Optional
 
-from .executor import Executor, DefaultRuleBasedExecutor
+from .cadence import CognitionCadence
+from .executor import DefaultRuleBasedExecutor, Executor
 from .planner import Planner
+from .prompts import DEFAULT_PROMPTS, PromptLibrary
 from .reflection import ReflectionEngine
 from .scratchpad import Scratchpad
-from .prompts import PromptLibrary, DEFAULT_PROMPTS
-from .cadence import CognitionCadence
 
 
 @dataclass

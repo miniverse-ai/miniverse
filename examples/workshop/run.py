@@ -49,16 +49,18 @@ from miniverse.cognition import (
     PromptTemplate,
     Scratchpad,
 )
-from miniverse.cognition.llm import LLMExecutor
+from miniverse.cognition.context import PromptContext
 from miniverse.cognition.executor import Executor
+from miniverse.cognition.llm import LLMExecutor
 from miniverse.cognition.planner import Planner
 from miniverse.cognition.reflection import ReflectionEngine
-from miniverse.cognition.context import PromptContext
 from miniverse.config import Config
 from miniverse.scenario import ScenarioLoader
 
 
-def build_environment_graph(state: EnvironmentGraphState | None) -> EnvironmentGraph | None:
+def build_environment_graph(
+    state: EnvironmentGraphState | None,
+) -> EnvironmentGraph | None:
     if state is None:
         return None
     nodes = {
@@ -90,8 +92,12 @@ class WorkshopRules(SimulationRules):
 
     def apply_tick(self, state: WorldState, tick: int) -> WorldState:
         updated = state.model_copy(deep=True)
-        backlog = updated.resources.get_metric("task_backlog", default=0, label="Pending Tasks")
-        power = updated.resources.get_metric("power_kwh", default=120.0, unit="kWh", label="Battery Reserve")
+        backlog = updated.resources.get_metric(
+            "task_backlog", default=0, label="Pending Tasks"
+        )
+        power = updated.resources.get_metric(
+            "power_kwh", default=120.0, unit="kWh", label="Battery Reserve"
+        )
 
         active_agents = 0
         for agent in updated.agents:
@@ -160,7 +166,10 @@ class DeterministicExecutor(Executor):
 
     ROLE_ACTIONS = {
         "lead": {"coordinate": ("work", "ops"), "check-in": ("communicate", "ops")},
-        "technician": {"repair": ("work", "workbench"), "restock": ("move", "inventory")},
+        "technician": {
+            "repair": ("work", "workbench"),
+            "restock": ("move", "inventory"),
+        },
         "analyst": {"analyze": ("analyze", "ops"), "report": ("communicate", "ops")},
     }
 
@@ -179,7 +188,9 @@ class DeterministicExecutor(Executor):
         if plan_step is None:
             action_type, target = ("rest", perception.location)
         else:
-            action_type, target = role_map.get(plan_step.description, ("work", perception.location))
+            action_type, target = role_map.get(
+                plan_step.description, ("work", perception.location)
+            )
         reasoning = (
             f"Executing plan step '{plan_step.description}'"
             if plan_step
@@ -257,10 +268,7 @@ class DebugPlanner(Planner):
             world_context=world_context,
             context=context,
         )
-        print(
-            "      Plan output:\n"
-            + json.dumps(asdict(plan), indent=2, default=str)
-        )
+        print("      Plan output:\n" + json.dumps(asdict(plan), indent=2, default=str))
         return plan
 
 
@@ -395,6 +403,7 @@ class TickAnalyzer:
             summary = ", ".join(f"{k}={v}" for k, v in counts.items())
             print(f"  [Analysis] Actions this tick: {summary}")
 
+
 def build_prompt_library() -> PromptLibrary:
     library = PromptLibrary()
     library.register(
@@ -409,11 +418,11 @@ def build_prompt_library() -> PromptLibrary:
                 "Environment JSON:\n{{context_json}}\n\n"
                 "Example output:\n"
                 "{\n"
-                "  \"steps\": [\n"
-                "    {\"description\": \"coordinate stand-up in operations\", \"metadata\": {\"duration_minutes\": 30}},\n"
-                "    {\"description\": \"inspect recycler filters\", \"metadata\": {\"location\": \"workbench\"}}\n"
+                '  "steps": [\n'
+                '    {"description": "coordinate stand-up in operations", "metadata": {"duration_minutes": 30}},\n'
+                '    {"description": "inspect recycler filters", "metadata": {"location": "workbench"}}\n'
                 "  ],\n"
-                "  \"metadata\": {\"planning_horizon\": \"next 3 hours\"}\n"
+                '  "metadata": {"planning_horizon": "next 3 hours"}\n'
                 "}\n\n"
                 "Respond with JSON only."
             ),
@@ -432,13 +441,13 @@ def build_prompt_library() -> PromptLibrary:
                 "Summary:\n{{context_summary}}\n\n"
                 "Example output:\n"
                 "{\n"
-                "  \"agent_id\": \"tech\",\n"
-                "  \"tick\": 7,\n"
-                "  \"action_type\": \"move\",\n"
-                "  \"target\": \"inventory\",\n"
-                "  \"parameters\": {\"reason\": \"pick up spare filters\"},\n"
-                "  \"reasoning\": \"Plan requires restocking filters before repairs\",\n"
-                "  \"communication\": null\n"
+                '  "agent_id": "tech",\n'
+                '  "tick": 7,\n'
+                '  "action_type": "move",\n'
+                '  "target": "inventory",\n'
+                '  "parameters": {"reason": "pick up spare filters"},\n'
+                '  "reasoning": "Plan requires restocking filters before repairs",\n'
+                '  "communication": null\n'
                 "}\n\n"
                 "Return JSON only."
             ),
@@ -455,8 +464,8 @@ def build_prompt_library() -> PromptLibrary:
                 "Full JSON:\n{{context_json}}\n\n"
                 "Example output:\n"
                 "{\n"
-                "  \"reflections\": [\n"
-                "    {\"content\": \"Coordinated early with Lin, backlog dropped. Need to request more filters.\", \"importance\": 6}\n"
+                '  "reflections": [\n'
+                '    {"content": "Coordinated early with Lin, backlog dropped. Need to request more filters.", "importance": 6}\n'
                 "  ]\n"
                 "}\n\n"
                 "Respond with JSON only."
@@ -468,8 +477,12 @@ def build_prompt_library() -> PromptLibrary:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Workshop simulation")
-    parser.add_argument("--llm", action="store_true", help="Use LLM-based cognition modules")
-    parser.add_argument("--ticks", type=int, default=5, help="Number of ticks to simulate")
+    parser.add_argument(
+        "--llm", action="store_true", help="Use LLM-based cognition modules"
+    )
+    parser.add_argument(
+        "--ticks", type=int, default=5, help="Number of ticks to simulate"
+    )
     parser.add_argument(
         "--debug",
         action="store_true",
@@ -529,51 +542,154 @@ async def run_simulation(
         {
             "action_type": "work",
             "description": "Work on current task",
-            "schema": {"action_type": "work", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "lead", "tick": 1, "action_type": "work", "target": "ops", "parameters": {}, "reasoning": "Continue coordinating team", "communication": None}]
+            "schema": {
+                "action_type": "work",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "lead",
+                    "tick": 1,
+                    "action_type": "work",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Continue coordinating team",
+                    "communication": None,
+                }
+            ],
         },
         {
             "action_type": "communicate",
             "description": "Send message to another agent",
-            "schema": {"action_type": "communicate", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": {"to": "<agent_id>", "message": "<string>"}},
-            "examples": [{"agent_id": "lead", "tick": 2, "action_type": "communicate", "target": "ops", "parameters": {}, "reasoning": "Coordinate with team", "communication": {"to": "tech", "message": "Can you check station B?"}}]
+            "schema": {
+                "action_type": "communicate",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": {"to": "<agent_id>", "message": "<string>"},
+            },
+            "examples": [
+                {
+                    "agent_id": "lead",
+                    "tick": 2,
+                    "action_type": "communicate",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Coordinate with team",
+                    "communication": {
+                        "to": "tech",
+                        "message": "Can you check station B?",
+                    },
+                }
+            ],
         },
         {
             "action_type": "move",
             "description": "Move to different location",
-            "schema": {"action_type": "move", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "tech", "tick": 3, "action_type": "move", "target": "workbench", "parameters": {}, "reasoning": "Need tools for repair", "communication": None}]
+            "schema": {
+                "action_type": "move",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "tech",
+                    "tick": 3,
+                    "action_type": "move",
+                    "target": "workbench",
+                    "parameters": {},
+                    "reasoning": "Need tools for repair",
+                    "communication": None,
+                }
+            ],
         },
         {
             "action_type": "rest",
             "description": "Rest to recover energy",
-            "schema": {"action_type": "rest", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "lead", "tick": 5, "action_type": "rest", "target": "ops", "parameters": {}, "reasoning": "Low energy, need break", "communication": None}]
+            "schema": {
+                "action_type": "rest",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "lead",
+                    "tick": 5,
+                    "action_type": "rest",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Low energy, need break",
+                    "communication": None,
+                }
+            ],
         },
         {
             "action_type": "analyze",
             "description": "Analyze metrics or situation",
-            "schema": {"action_type": "analyze", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "analyst", "tick": 4, "action_type": "analyze", "target": "ops", "parameters": {}, "reasoning": "Review backlog metrics", "communication": None}]
+            "schema": {
+                "action_type": "analyze",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "analyst",
+                    "tick": 4,
+                    "action_type": "analyze",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Review backlog metrics",
+                    "communication": None,
+                }
+            ],
         },
         {
             "action_type": "monitor",
             "description": "Monitor systems or environment",
-            "schema": {"action_type": "monitor", "target": "<subject>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "analyst", "tick": 6, "action_type": "monitor", "target": "battery_reserve", "parameters": {}, "reasoning": "Check power levels", "communication": None}]
-        }
+            "schema": {
+                "action_type": "monitor",
+                "target": "<subject>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "analyst",
+                    "tick": 6,
+                    "action_type": "monitor",
+                    "target": "battery_reserve",
+                    "parameters": {},
+                    "reasoning": "Check power levels",
+                    "communication": None,
+                }
+            ],
+        },
     ]
 
     cognition_map: Dict[str, AgentCognition] = {}
     for agent_id, profile in profiles_map.items():
         if use_llm and prompt_library is not None:
-            scratchpad = Scratchpad(state={"execute_prompt_template": "execute_workshop"})
+            scratchpad = Scratchpad(
+                state={"execute_prompt_template": "execute_workshop"}
+            )
             cognition_map[agent_id] = AgentCognition(
                 planner=LLMPlanner(
                     template_name="plan_workshop",
                     prompt_library=prompt_library,
                 ),
-                executor=LLMExecutor(template_name="default", available_actions=available_actions),
+                executor=LLMExecutor(
+                    template_name="default", available_actions=available_actions
+                ),
                 reflection=LLMReflectionEngine(
                     template_name="reflect_workshop",
                     prompt_library=prompt_library,
@@ -597,7 +713,9 @@ async def run_simulation(
             cognition_map[agent_id] = AgentCognition(
                 planner=DebugPlanner(cognition.planner, agent_id, provider, model),
                 executor=DebugExecutor(cognition.executor, agent_id),
-                reflection=DebugReflection(cognition.reflection, agent_id, provider, model),
+                reflection=DebugReflection(
+                    cognition.reflection, agent_id, provider, model
+                ),
                 scratchpad=cognition.scratchpad,
                 prompt_library=cognition.prompt_library,
             )

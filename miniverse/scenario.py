@@ -43,25 +43,25 @@ Usage:
 """
 
 import json
-from pathlib import Path
-from typing import Any, Dict, List, Tuple, Optional
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 from .config import Config
-from .schemas import (
-    WorldState,
-    AgentProfile,
-    EnvironmentState,
-    ResourceState,
-    AgentStatus,
-    WorldEvent,
-    Stat,
-)
 from .environment import (
     EnvironmentGraphState,
     EnvironmentGridState,
-    LocationNodeState,
     GridTileState,
+    LocationNodeState,
+)
+from .schemas import (
+    AgentProfile,
+    AgentStatus,
+    EnvironmentState,
+    ResourceState,
+    Stat,
+    WorldEvent,
+    WorldState,
 )
 
 
@@ -96,7 +96,9 @@ class ScenarioLoader:
             scenarios_dir: Directory containing scenario files.
                           Defaults to {PROJECT_ROOT}/examples/scenarios
         """
-        self.scenarios_dir = scenarios_dir or (Config.PROJECT_ROOT / "examples" / "scenarios")
+        self.scenarios_dir = scenarios_dir or (
+            Config.PROJECT_ROOT / "examples" / "scenarios"
+        )
 
     def load(self, scenario_name: str) -> Tuple[WorldState, List[AgentProfile]]:
         """Load a scenario by name from JSON file.
@@ -179,7 +181,9 @@ class ScenarioLoader:
                     "Each agent entry must include 'profile' and 'status' blocks"
                 )
 
-    def _build_world_state(self, data: Dict, agent_statuses: List[AgentStatus]) -> WorldState:
+    def _build_world_state(
+        self, data: Dict, agent_statuses: List[AgentStatus]
+    ) -> WorldState:
         """Build initial WorldState from scenario data.
 
         Args:
@@ -356,7 +360,9 @@ class ScenarioLoader:
             for item in tiles_data:
                 if not isinstance(item, dict):
                     continue
-                if "coordinate" in item and isinstance(item["coordinate"], (list, tuple)):
+                if "coordinate" in item and isinstance(
+                    item["coordinate"], (list, tuple)
+                ):
                     row, col = item["coordinate"]
                 else:
                     row = item.get("row")
@@ -385,7 +391,8 @@ class ScenarioLoader:
             return []
 
         return [
-            f.stem for f in self.scenarios_dir.glob("*.json")
+            f.stem
+            for f in self.scenarios_dir.glob("*.json")
             if not f.name.startswith("_")
         ]
 

@@ -13,8 +13,8 @@ No file I/O or global state.
 import json
 
 from miniverse.schemas import AgentAction, AgentPerception, WorldState
-from .llm_utils import call_llm_with_retries
 
+from .llm_utils import call_llm_with_retries
 
 # ============================================================================
 # LLM Call Functions
@@ -53,7 +53,9 @@ Current situation (tick {perception.tick}):
 What do you do? Output JSON matching AgentAction schema.
 """
 
-    user_prompt = user_prompt_override if user_prompt_override is not None else user_prompt
+    user_prompt = (
+        user_prompt_override if user_prompt_override is not None else user_prompt
+    )
 
     return await call_llm_with_retries(
         system_prompt=system_prompt,

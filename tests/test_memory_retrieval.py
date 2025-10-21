@@ -2,6 +2,7 @@
 
 import asyncio
 from uuid import uuid4
+
 import pytest
 
 from miniverse.memory import ImportanceWeightedMemory, SimpleMemoryStream
@@ -44,7 +45,9 @@ async def test_keyword_retrieval():
         tags=["systems"],
     )
 
-    results = await memory.get_relevant_memories(run_id, agent_id, query="recycler", limit=2)
+    results = await memory.get_relevant_memories(
+        run_id, agent_id, query="recycler", limit=2
+    )
     assert len(results) == 2
     assert "recycler" in results[0]
 

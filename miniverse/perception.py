@@ -46,7 +46,6 @@ from miniverse.schemas import (
     WorldState,
 )
 
-
 DEFAULT_GRID_VISIBILITY_RADIUS = 2
 
 
@@ -124,8 +123,7 @@ def build_agent_perception(
     # Deep copy agent's own attributes (introspection - agents know their own state)
     # Clone prevents agent cognition from accidentally mutating world state
     personal_attributes = {
-        key: stat.model_copy(deep=True)
-        for key, stat in agent_status.attributes.items()
+        key: stat.model_copy(deep=True) for key, stat in agent_status.attributes.items()
     }
 
     # Deep copy shared resources (public information - displayed on dashboards)
@@ -180,7 +178,9 @@ def build_agent_perception(
             VisibleGridTile(position=pos, tile=tile)
             for pos, tile in sorted(tiles.items())
         ]
-        grid_visibility = GridVisibility(center=center, radius=radius, tiles=visible_tiles)
+        grid_visibility = GridVisibility(
+            center=center, radius=radius, tiles=visible_tiles
+        )
         grid_ascii = render_ascii_window(
             world_state.environment_grid,
             center,

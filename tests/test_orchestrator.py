@@ -1,11 +1,14 @@
 """Tests covering the orchestrator flow with mocked LLM calls."""
 
 from datetime import datetime, timezone
-from uuid import uuid4
 from unittest.mock import AsyncMock
+from uuid import uuid4
 
 import pytest
 
+from miniverse.cognition import AgentCognition
+from miniverse.cognition.llm import LLMExecutor
+from miniverse.memory import MemoryStrategy
 from miniverse.orchestrator import Orchestrator
 from miniverse.schemas import (
     AgentAction,
@@ -18,9 +21,6 @@ from miniverse.schemas import (
     WorldState,
 )
 from miniverse.simulation_rules import SimulationRules
-from miniverse.memory import MemoryStrategy
-from miniverse.cognition import AgentCognition
-from miniverse.cognition.llm import LLMExecutor
 
 
 class DummyRules(SimulationRules):
@@ -90,13 +90,19 @@ class RecordingMemory(MemoryStrategy):
         return memory
 
     async def get_recent_memories(self, run_id, agent_id, limit=10):
-        return [mem.content for mem in self.records if mem.agent_id == agent_id][-limit:]
+        return [mem.content for mem in self.records if mem.agent_id == agent_id][
+            -limit:
+        ]
 
-    async def get_relevant_memories(self, run_id, agent_id, query, limit=5):  # pragma: no cover - unused
+    async def get_relevant_memories(
+        self, run_id, agent_id, query, limit=5
+    ):  # pragma: no cover - unused
         return []
 
     async def clear_agent_memories(self, run_id, agent_id):  # pragma: no cover - unused
-        self.records = [record for record in self.records if record.agent_id != agent_id]
+        self.records = [
+            record for record in self.records if record.agent_id != agent_id
+        ]
 
 
 @pytest.mark.asyncio
@@ -150,7 +156,9 @@ async def test_orchestrator_runs_single_tick(monkeypatch):
         llm_model="gpt-5-nano",
         simulation_rules=rules,
         memory=memory,
-        agent_cognition={"alpha": AgentCognition(executor=LLMExecutor(template_name="default"))},
+        agent_cognition={
+            "alpha": AgentCognition(executor=LLMExecutor(template_name="default"))
+        },
     )
 
     mocked_action = AgentAction(
@@ -169,8 +177,12 @@ async def test_orchestrator_runs_single_tick(monkeypatch):
     world_update_mock = AsyncMock(return_value=mocked_state)
 
     # LLMExecutor uses call_llm_with_retries under miniverse.cognition.llm
-    monkeypatch.setattr("miniverse.cognition.llm.call_llm_with_retries", get_action_mock)
-    monkeypatch.setattr("miniverse.orchestrator.process_world_update", world_update_mock)
+    monkeypatch.setattr(
+        "miniverse.cognition.llm.call_llm_with_retries", get_action_mock
+    )
+    monkeypatch.setattr(
+        "miniverse.orchestrator.process_world_update", world_update_mock
+    )
 
     result = await orchestrator.run(num_ticks=1)
 
@@ -179,7 +191,9 @@ async def test_orchestrator_runs_single_tick(monkeypatch):
     get_action_mock.assert_awaited()
     world_update_mock.assert_awaited()
     assert any("Need to inspect" in record.content for record in memory.records)
-    assert any(record.tags and "communication" in record.tags for record in memory.records)
+    assert any(
+        record.tags and "communication" in record.tags for record in memory.records
+    )
 
     # A4: Verify action communication is sanitized on persistence (no message body)
     actions = await orchestrator.persistence.get_actions(orchestrator.run_id, 1)
@@ -236,7 +250,9 @@ async def test_orchestrator_stops_when_rules_signal(monkeypatch):
         llm_model="gpt-5-nano",
         simulation_rules=rules,
         memory=memory,
-        agent_cognition={"alpha": AgentCognition(executor=LLMExecutor(template_name="default"))},
+        agent_cognition={
+            "alpha": AgentCognition(executor=LLMExecutor(template_name="default"))
+        },
     )
 
     mocked_action = AgentAction(
@@ -255,7 +271,9 @@ async def test_orchestrator_stops_when_rules_signal(monkeypatch):
     world_update_mock = AsyncMock(side_effect=[state_tick_1, state_tick_2])
 
     monkeypatch.setattr("miniverse.cognition.llm.call_llm_with_retries", action_mock)
-    monkeypatch.setattr("miniverse.orchestrator.process_world_update", world_update_mock)
+    monkeypatch.setattr(
+        "miniverse.orchestrator.process_world_update", world_update_mock
+    )
 
     result = await orchestrator.run(num_ticks=5)
 

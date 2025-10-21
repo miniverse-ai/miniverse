@@ -11,11 +11,11 @@ class Color(Enum):
     """ANSI color codes for terminal output."""
 
     # Colors for operation types
-    BLUE = "\033[94m"      # Deterministic operations (physics, perception)
-    YELLOW = "\033[93m"    # LLM calls (planner, executor, reflection)
-    RED = "\033[91m"       # Errors and retries
-    GREEN = "\033[92m"     # Success/completion
-    CYAN = "\033[96m"      # Info/metadata
+    BLUE = "\033[94m"  # Deterministic operations (physics, perception)
+    YELLOW = "\033[93m"  # LLM calls (planner, executor, reflection)
+    RED = "\033[91m"  # Errors and retries
+    GREEN = "\033[92m"  # Success/completion
+    CYAN = "\033[96m"  # Info/metadata
 
     # Formatting
     BOLD = "\033[1m"
@@ -70,7 +70,7 @@ def log_info(message: str) -> None:
 
 # Markers for operation types (color-blind accessible)
 LOG_TAG_DETERMINISTIC = "[•]"  # Deterministic / rule-based step (no LLM)
-LOG_TAG_LLM = "[LLM]"          # Actual LLM call will occur
-LOG_TAG_ERROR = "[!]"            # Error/retry
-LOG_TAG_SUCCESS = "[✓]"          # Success
-LOG_TAG_INFO = "[i]"             # Information
+LOG_TAG_LLM = "[LLM]"  # Actual LLM call will occur
+LOG_TAG_ERROR = "[!]"  # Error/retry
+LOG_TAG_SUCCESS = "[✓]"  # Success
+LOG_TAG_INFO = "[i]"  # Information

@@ -15,9 +15,9 @@ Design principle: Start simple (FIFO), enable sophisticated (weighted retrieval)
 """
 
 from abc import ABC, abstractmethod
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import UUID
-from datetime import datetime
 
 from miniverse.schemas import AgentMemory
 
@@ -464,8 +464,7 @@ class ImportanceWeightedMemory(MemoryStrategy):
             recency = 1.0 / (1.0 + recency_delta)
             importance = mem.importance / 10.0
             base_score = (
-                self.recency_weight * recency
-                + self.importance_weight * importance
+                self.recency_weight * recency + self.importance_weight * importance
             )
 
             if not terms:

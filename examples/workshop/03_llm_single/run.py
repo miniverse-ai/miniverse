@@ -37,10 +37,10 @@ from miniverse import (
 )
 from miniverse.cognition import AgentCognition, LLMExecutor
 
-
 # ============================================================================
 # STEP 1: Define Physics (Same as example 02)
 # ============================================================================
+
 
 class WorkshopRules(SimulationRules):
     """Physics for workshop with task backlog and power consumption."""
@@ -48,8 +48,12 @@ class WorkshopRules(SimulationRules):
     def apply_tick(self, state: WorldState, tick: int) -> WorldState:
         updated = state.model_copy(deep=True)
 
-        backlog = updated.resources.get_metric("task_backlog", default=10, label="Tasks")
-        power = updated.resources.get_metric("power_kwh", default=100.0, unit="kWh", label="Battery")
+        backlog = updated.resources.get_metric(
+            "task_backlog", default=10, label="Tasks"
+        )
+        power = updated.resources.get_metric(
+            "power_kwh", default=100.0, unit="kWh", label="Battery"
+        )
 
         active_workers = 0
         for agent in updated.agents:
@@ -82,6 +86,7 @@ class WorkshopRules(SimulationRules):
 # STEP 2: Run Simulation (LLM Agent)
 # ============================================================================
 
+
 async def main():
     # Check for LLM configuration
     provider = os.getenv("LLM_PROVIDER")
@@ -106,9 +111,13 @@ async def main():
     debug_perc = os.getenv("DEBUG_PERCEPTION")
     verbose = os.getenv("MINIVERSE_VERBOSE")
     print(f"WORLD_UPDATE_MODE={world_update_mode} (auto|deterministic|llm)")
-    print(f"DEBUG_LLM={'on' if debug_llm else 'off'} | DEBUG_PERCEPTION={'on' if debug_perc else 'off'} | MINIVERSE_VERBOSE={'on' if verbose else 'off'}")
+    print(
+        f"DEBUG_LLM={'on' if debug_llm else 'off'} | DEBUG_PERCEPTION={'on' if debug_perc else 'off'} | MINIVERSE_VERBOSE={'on' if verbose else 'off'}"
+    )
     # Explain phases so users understand where time is spent
-    print("Phases per tick: Physics -> Agent LLM (choose_action) -> World Engine (LLM or deterministic) -> Persist -> Summary")
+    print(
+        "Phases per tick: Physics -> Agent LLM (choose_action) -> World Engine (LLM or deterministic) -> Persist -> Summary"
+    )
     print()
 
     # ========================================
@@ -122,7 +131,7 @@ async def main():
         resources=ResourceState(
             metrics={
                 "task_backlog": Stat(value=10, label="Task Backlog"),
-                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve")
+                "power_kwh": Stat(value=100.0, unit="kWh", label="Battery Reserve"),
             }
         ),
         agents=[
@@ -131,10 +140,10 @@ async def main():
                 display_name="AI Worker",
                 attributes={
                     "energy": Stat(value=80, unit="%", label="Energy"),
-                    "stress": Stat(value=20, unit="%", label="Stress")
-                }
+                    "stress": Stat(value=20, unit="%", label="Stress"),
+                },
             ),
-        ]
+        ],
     )
 
     # ========================================
@@ -151,7 +160,7 @@ async def main():
             personality="thoughtful and adaptive",
             skills={"task_management": "expert"},
             goals=["Maintain personal wellbeing", "Complete tasks efficiently"],
-            relationships={}
+            relationships={},
         ),
     }
 
@@ -170,21 +179,55 @@ async def main():
             "name": "work",
             "action_type": "work",
             "description": "Work on current task",
-            "schema": {"action_type": "work", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "ai_worker", "tick": 1, "action_type": "work", "target": "ops", "parameters": {}, "reasoning": "Continue coordinating", "communication": None}],
+            "schema": {
+                "action_type": "work",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "ai_worker",
+                    "tick": 1,
+                    "action_type": "work",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Continue coordinating",
+                    "communication": None,
+                }
+            ],
         },
         {
             "name": "rest",
             "action_type": "rest",
             "description": "Rest to recover energy",
-            "schema": {"action_type": "rest", "target": "<location>", "parameters": {}, "reasoning": "<string>", "communication": None},
-            "examples": [{"agent_id": "ai_worker", "tick": 2, "action_type": "rest", "target": "ops", "parameters": {}, "reasoning": "Low energy", "communication": None}],
+            "schema": {
+                "action_type": "rest",
+                "target": "<location>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "agent_id": "ai_worker",
+                    "tick": 2,
+                    "action_type": "rest",
+                    "target": "ops",
+                    "parameters": {},
+                    "reasoning": "Low energy",
+                    "communication": None,
+                }
+            ],
         },
     ]
 
     cognition_map = {
         "ai_worker": AgentCognition(
-            executor=LLMExecutor(template_name="default", available_actions=available_actions)
+            executor=LLMExecutor(
+                template_name="default", available_actions=available_actions
+            )
         ),
     }
 

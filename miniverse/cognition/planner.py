@@ -10,8 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, List, Protocol
 
-from .scratchpad import Scratchpad
 from .context import PromptContext
+from .scratchpad import Scratchpad
 
 
 @dataclass

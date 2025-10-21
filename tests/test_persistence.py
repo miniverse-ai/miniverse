@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from miniverse.persistence import InMemoryPersistence
 from miniverse.memory import SimpleMemoryStream
+from miniverse.persistence import InMemoryPersistence
 from miniverse.schemas import (
     AgentAction,
     AgentMemory,
@@ -29,7 +29,10 @@ def make_world_state() -> WorldState:
             AgentStatus(
                 agent_id="alpha",
                 location="operations",
-                attributes={"energy": Stat(value=80, unit="%"), "stress": Stat(value=20, unit="%")},
+                attributes={
+                    "energy": Stat(value=80, unit="%"),
+                    "stress": Stat(value=20, unit="%"),
+                },
             )
         ],
         metadata={},

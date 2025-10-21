@@ -10,27 +10,28 @@ No LLM required - uses deterministic executor.
 """
 
 import asyncio
-import pytest
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
 from miniverse import (
-    Orchestrator,
     AgentProfile,
     AgentStatus,
-    WorldState,
-    ResourceState,
     EnvironmentState,
+    Orchestrator,
+    ResourceState,
     SimulationRules,
     Stat,
+    WorldState,
 )
 from miniverse.cognition import AgentCognition, Scratchpad
-from miniverse.cognition.executor import Executor
 from miniverse.cognition.context import PromptContext
-from miniverse.persistence import InMemoryPersistence
-from miniverse.memory import SimpleMemoryStream
-from miniverse.schemas import AgentAction, AgentPerception
+from miniverse.cognition.executor import Executor
 from miniverse.cognition.planner import Plan
+from miniverse.memory import SimpleMemoryStream
+from miniverse.persistence import InMemoryPersistence
+from miniverse.schemas import AgentAction, AgentPerception
 
 
 class CommunicateExecutor(Executor):
@@ -55,7 +56,7 @@ class CommunicateExecutor(Executor):
                 reasoning="Inviting Bob to party",
                 communication={
                     "to": "bob",
-                    "message": "Hey Bob! Party at my place on Friday 5pm. You should come!"
+                    "message": "Hey Bob! Party at my place on Friday 5pm. You should come!",
                 },
             )
 

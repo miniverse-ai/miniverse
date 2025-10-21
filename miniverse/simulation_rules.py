@@ -16,7 +16,7 @@ Design principle: If it can be calculated, calculate it (don't ask LLM).
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING
 
-from miniverse.schemas import WorldState, AgentAction
+from miniverse.schemas import AgentAction, WorldState
 
 if TYPE_CHECKING:  # pragma: no cover - type hint only
     from miniverse.schemas import AgentPerception

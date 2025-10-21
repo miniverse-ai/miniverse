@@ -10,14 +10,14 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from miniverse.schemas import AgentAction, AgentPerception
 from miniverse.llm_calls import get_agent_action
+from miniverse.schemas import AgentAction, AgentPerception
 
-from .planner import Plan, PlanStep
-from .scratchpad import Scratchpad
 from .context import PromptContext
+from .planner import Plan, PlanStep
 from .prompts import DEFAULT_PROMPTS
 from .renderers import render_prompt
+from .scratchpad import Scratchpad
 
 
 class Executor(Protocol):
@@ -67,7 +67,9 @@ class RuleBasedExecutor:
         plan_step: PlanStep | None,
         context: PromptContext,
     ) -> AgentAction:
-        raise NotImplementedError("RuleBasedExecutor requires a concrete implementation")
+        raise NotImplementedError(
+            "RuleBasedExecutor requires a concrete implementation"
+        )
 
 
 class DefaultRuleBasedExecutor(RuleBasedExecutor):

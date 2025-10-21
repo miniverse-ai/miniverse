@@ -79,5 +79,8 @@ async def test_call_llm_with_retries_injects_feedback(monkeypatch):
 
     assert result.content == "fixed"
     assert len(attempts) == 2
-    assert "Your previous JSON response failed to validate against the required schema." in attempts[1]
+    assert (
+        "Your previous JSON response failed to validate against the required schema."
+        in attempts[1]
+    )
     assert "- content: Field required" in attempts[1]

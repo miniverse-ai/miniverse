@@ -15,40 +15,40 @@ Coordinates the simulation loop:
 
 import asyncio
 import os
-from typing import Any, Callable, List, Dict, Optional
+from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID, uuid4
 
-from .perception import build_agent_perception
-from .llm_calls import process_world_update
-from .schemas import AgentProfile, WorldState, AgentAction, AgentMemory
-from .simulation_rules import SimulationRules, format_resources_generic
-from .persistence import PersistenceStrategy, InMemoryPersistence
-from .memory import MemoryStrategy, SimpleMemoryStream
-from .logging_utils import (
-    colored,
-    Color,
-    LOG_TAG_DETERMINISTIC,
-    LOG_TAG_LLM,
-    LOG_TAG_SUCCESS,
-)
 from .cognition import (
+    DEFAULT_PROMPTS,
     AgentCognition,
     AgentCognitionMap,
+    LLMExecutor,
+    LLMPlanner,
+    LLMReflectionEngine,
     PromptContext,
     build_default_cognition,
     build_prompt_context,
-    DEFAULT_PROMPTS,
-    LLMPlanner,
-    LLMExecutor,
-    LLMReflectionEngine,
 )
 from .cognition.cadence import PLANNER_LAST_TICK_KEY, REFLECTION_LAST_TICK_KEY
 from .cognition.planner import Plan, PlanStep
-
+from .llm_calls import process_world_update
+from .logging_utils import (
+    LOG_TAG_DETERMINISTIC,
+    LOG_TAG_LLM,
+    LOG_TAG_SUCCESS,
+    Color,
+    colored,
+)
+from .memory import MemoryStrategy, SimpleMemoryStream
+from .perception import build_agent_perception
+from .persistence import InMemoryPersistence, PersistenceStrategy
+from .schemas import AgentAction, AgentMemory, AgentProfile, WorldState
+from .simulation_rules import SimulationRules, format_resources_generic
 
 # =============================
 # Module-level Exceptions
 # =============================
+
 
 class AgentActionsFailedError(Exception):
     """Raised when one or more agent actions fail during a tick.
@@ -251,14 +251,26 @@ class Orchestrator:
                 planner_obj = cognition.planner
                 name = getattr(planner_obj, "template_name", None)
                 # One-time notice: using default template
-                if getattr(planner_obj, "template", None) is None and (name is None or name == "plan") and library is DEFAULT_PROMPTS:
+                if (
+                    getattr(planner_obj, "template", None) is None
+                    and (name is None or name == "plan")
+                    and library is DEFAULT_PROMPTS
+                ):
                     key = f"planner_default:{agent_id}"
                     if not self._prompt_warnings_emitted.get(key):
-                        print(f"  [Prompts] Agent '{agent_id}' planner using default template 'plan'.")
+                        print(
+                            f"  [Prompts] Agent '{agent_id}' planner using default template 'plan'."
+                        )
                         self._prompt_warnings_emitted[key] = True
                 # Missing named template warning
-                if name and name not in library.templates and not self._prompt_warnings_emitted.get(f"planner_missing:{name}"):
-                    print(f"  [Prompts] Agent '{agent_id}' planner template '{name}' not found; using default 'plan'.")
+                if (
+                    name
+                    and name not in library.templates
+                    and not self._prompt_warnings_emitted.get(f"planner_missing:{name}")
+                ):
+                    print(
+                        f"  [Prompts] Agent '{agent_id}' planner template '{name}' not found; using default 'plan'."
+                    )
                     self._prompt_warnings_emitted[f"planner_missing:{name}"] = True
 
             # Executor
@@ -266,14 +278,28 @@ class Orchestrator:
                 exec_obj = cognition.executor
                 name = getattr(exec_obj, "template_name", None)
                 # One-time notice: using default template
-                if getattr(exec_obj, "template", None) is None and (name is None or name in ("default", "execute_tick")) and library is DEFAULT_PROMPTS:
+                if (
+                    getattr(exec_obj, "template", None) is None
+                    and (name is None or name in ("default", "execute_tick"))
+                    and library is DEFAULT_PROMPTS
+                ):
                     key = f"executor_default:{agent_id}"
                     if not self._prompt_warnings_emitted.get(key):
-                        print(f"  [Prompts] Agent '{agent_id}' executor using default template '{'default' if name in (None, 'default') else name}'.")
+                        print(
+                            f"  [Prompts] Agent '{agent_id}' executor using default template '{'default' if name in (None, 'default') else name}'."
+                        )
                         self._prompt_warnings_emitted[key] = True
                 # Missing named template warning
-                if name and name not in library.templates and not self._prompt_warnings_emitted.get(f"executor_missing:{name}"):
-                    print(f"  [Prompts] Agent '{agent_id}' executor template '{name}' not found; using default 'default'.")
+                if (
+                    name
+                    and name not in library.templates
+                    and not self._prompt_warnings_emitted.get(
+                        f"executor_missing:{name}"
+                    )
+                ):
+                    print(
+                        f"  [Prompts] Agent '{agent_id}' executor template '{name}' not found; using default 'default'."
+                    )
                     self._prompt_warnings_emitted[f"executor_missing:{name}"] = True
 
             # Reflection
@@ -281,14 +307,28 @@ class Orchestrator:
                 refl_obj = cognition.reflection
                 name = getattr(refl_obj, "template_name", None)
                 # One-time notice: using default template
-                if getattr(refl_obj, "template", None) is None and (name is None or name == "reflect_diary") and library is DEFAULT_PROMPTS:
+                if (
+                    getattr(refl_obj, "template", None) is None
+                    and (name is None or name == "reflect_diary")
+                    and library is DEFAULT_PROMPTS
+                ):
                     key = f"reflection_default:{agent_id}"
                     if not self._prompt_warnings_emitted.get(key):
-                        print(f"  [Prompts] Agent '{agent_id}' reflection using default template 'reflect_diary'.")
+                        print(
+                            f"  [Prompts] Agent '{agent_id}' reflection using default template 'reflect_diary'."
+                        )
                         self._prompt_warnings_emitted[key] = True
                 # Missing named template warning
-                if name and name not in library.templates and not self._prompt_warnings_emitted.get(f"reflection_missing:{name}"):
-                    print(f"  [Prompts] Agent '{agent_id}' reflection template '{name}' not found; using default 'reflect_diary'.")
+                if (
+                    name
+                    and name not in library.templates
+                    and not self._prompt_warnings_emitted.get(
+                        f"reflection_missing:{name}"
+                    )
+                ):
+                    print(
+                        f"  [Prompts] Agent '{agent_id}' reflection template '{name}' not found; using default 'reflect_diary'."
+                    )
                     self._prompt_warnings_emitted[f"reflection_missing:{name}"] = True
 
     def _describe_world_update_mode(self) -> str:
@@ -296,24 +336,38 @@ class Orchestrator:
         mode = self.world_update_mode
         rules = self.simulation_rules
         if mode == "deterministic":
-            if rules and getattr(rules, "process_actions").__func__ is not SimulationRules.process_actions:
-                return "[Preflight] World updates: deterministic (rules.process_actions)"
+            if (
+                rules
+                and getattr(rules, "process_actions").__func__
+                is not SimulationRules.process_actions
+            ):
+                return (
+                    "[Preflight] World updates: deterministic (rules.process_actions)"
+                )
             return "[Preflight] World updates: deterministic (basic)"
         if mode == "llm":
             return "[Preflight] World updates: LLM (fail-fast if misconfigured)"
         # auto mode
-        if rules and getattr(rules, "process_actions").__func__ is not SimulationRules.process_actions:
+        if (
+            rules
+            and getattr(rules, "process_actions").__func__
+            is not SimulationRules.process_actions
+        ):
             return "[Preflight] World updates (auto): deterministic via rules.process_actions"
         if self.llm_provider and self.llm_model:
             return "[Preflight] World updates (auto): LLM"
         return "[Preflight] World updates (auto): deterministic (basic)"
 
-    def _set_scratchpad_value(self, cognition: AgentCognition, key: str, value: Any) -> None:
+    def _set_scratchpad_value(
+        self, cognition: AgentCognition, key: str, value: Any
+    ) -> None:
         """Safely set scratchpad value (no-op if scratchpad is None)."""
         if cognition.scratchpad is not None:
             cognition.scratchpad.state[key] = value
 
-    def _get_scratchpad_value(self, cognition: AgentCognition, key: str, default: Any = None) -> Any:
+    def _get_scratchpad_value(
+        self, cognition: AgentCognition, key: str, default: Any = None
+    ) -> Any:
         """Safely get scratchpad value (returns default if scratchpad is None)."""
         if cognition.scratchpad is None:
             return default
@@ -411,11 +465,18 @@ class Orchestrator:
         # previous tick's physics. Example: resource consumption, environmental decay,
         # scheduled events. Physics is pure Python (fast, testable, deterministic).
         if self.simulation_rules:
-            print(colored(f"  {LOG_TAG_DETERMINISTIC} [Physics] Applying deterministic rules for tick {tick}...", Color.BLUE))
+            print(
+                colored(
+                    f"  {LOG_TAG_DETERMINISTIC} [Physics] Applying deterministic rules for tick {tick}...",
+                    Color.BLUE,
+                )
+            )
             self.current_state = self.simulation_rules.apply_tick(
                 self.current_state, tick
             )
-            print(colored(f"  {LOG_TAG_SUCCESS} [Physics] Physics applied", Color.GREEN))
+            print(
+                colored(f"  {LOG_TAG_SUCCESS} [Physics] Physics applied", Color.GREEN)
+            )
 
         # 1. Gather agent actions in parallel. Each agent gets partial observability based on
         # their location and access rights. Running in parallel minimizes total LLM latency
@@ -492,9 +553,7 @@ class Orchestrator:
 
         return valid_actions
 
-    async def _get_single_agent_action(
-        self, agent_id: str, tick: int
-    ) -> AgentAction:
+    async def _get_single_agent_action(self, agent_id: str, tick: int) -> AgentAction:
         """Get single agent's action decision.
 
         Args:
@@ -509,7 +568,12 @@ class Orchestrator:
         """
         agent_name = self.agents[agent_id].name
         cognition = self.agent_cognition[agent_id]
-        print(colored(f"  {LOG_TAG_DETERMINISTIC} [{agent_name}] Building perception...", Color.BLUE))
+        print(
+            colored(
+                f"  {LOG_TAG_DETERMINISTIC} [{agent_name}] Building perception...",
+                Color.BLUE,
+            )
+        )
 
         # A2: Do not read messages from actions. Messages are sourced from memories.
 
@@ -529,12 +593,28 @@ class Orchestrator:
 
         # DEBUG_MEMORY: Show what memories agent retrieved
         if debug_memory:
-            print(colored(f"\n  [DEBUG_MEMORY] {agent_name} - Retrieved {len(recent_agent_memories)} memories:", Color.CYAN))
+            print(
+                colored(
+                    f"\n  [DEBUG_MEMORY] {agent_name} - Retrieved {len(recent_agent_memories)} memories:",
+                    Color.CYAN,
+                )
+            )
             for i, mem in enumerate(recent_agent_memories[:5], 1):  # Show first 5
-                mem_preview = mem.content[:80] + "..." if len(mem.content) > 80 else mem.content
-                print(colored(f"    {i}. [Tick {mem.tick}, Imp: {mem.importance}] {mem_preview}", Color.CYAN))
+                mem_preview = (
+                    mem.content[:80] + "..." if len(mem.content) > 80 else mem.content
+                )
+                print(
+                    colored(
+                        f"    {i}. [Tick {mem.tick}, Imp: {mem.importance}] {mem_preview}",
+                        Color.CYAN,
+                    )
+                )
             if len(recent_agent_memories) > 5:
-                print(colored(f"    ... and {len(recent_agent_memories) - 5} more", Color.CYAN))
+                print(
+                    colored(
+                        f"    ... and {len(recent_agent_memories) - 5} more", Color.CYAN
+                    )
+                )
 
         # Build direct messages for this agent from recent memories (recipient entries only)
         recent_messages: List[Dict[str, str]] = []
@@ -544,7 +624,11 @@ class Orchestrator:
             role = (mem.metadata or {}).get("role")
             if role != "recipient":
                 continue
-            sender = (mem.metadata or {}).get("sender") or (mem.metadata or {}).get("sender_name") or "unknown"
+            sender = (
+                (mem.metadata or {}).get("sender")
+                or (mem.metadata or {}).get("sender_name")
+                or "unknown"
+            )
             message_text = (mem.metadata or {}).get("message") or mem.content
             recent_messages.append({"from": sender, "message": message_text})
 
@@ -578,7 +662,11 @@ class Orchestrator:
                 print(f"    ... and {len(recent_memory_strings) - 5} more")
             print(f"  Messages ({len(perception.messages)}):")
             for msg in perception.messages:
-                preview = msg["message"][:60] + "..." if len(msg["message"]) > 60 else msg["message"]
+                preview = (
+                    msg["message"][:60] + "..."
+                    if len(msg["message"]) > 60
+                    else msg["message"]
+                )
                 print(f"    - From {msg['from']}: {preview}")
             if not perception.messages:
                 print(f"    (none)")
@@ -594,7 +682,9 @@ class Orchestrator:
         # This avoids repeating the same data across multiple context builds.
         extra_common = {
             # First-turn only initial state prompt; otherwise empty
-            "initial_state_agent_prompt": self.agent_prompts.get(agent_id, "") if tick == 1 else "",
+            "initial_state_agent_prompt": (
+                self.agent_prompts.get(agent_id, "") if tick == 1 else ""
+            ),
             # Optional simulation instructions (system-level contract). If empty, template default applies
             "simulation_instructions": self.world_prompt or "",
             "llm_provider": self.llm_provider,
@@ -616,7 +706,9 @@ class Orchestrator:
 
         # Summarize current plan state for planning context. Planner needs to see existing
         # plan to decide whether to refresh, extend, or keep current plan.
-        planning_plan_state = self._plan_state_summary(initial_plan, existing_plan_index)
+        planning_plan_state = self._plan_state_summary(
+            initial_plan, existing_plan_index
+        )
 
         # Build prompt context for planning. Planner receives full world state, perception,
         # memories, and current plan to generate/refresh multi-step plans. Context is
@@ -669,12 +761,18 @@ class Orchestrator:
             # Fallback: detect known LLM executor type
             try:
                 from .cognition.llm import LLMExecutor as _LLMExec
+
                 uses_llm = isinstance(executor_obj, _LLMExec)
             except Exception:
                 uses_llm = False
 
         exec_tag = LOG_TAG_LLM if uses_llm else LOG_TAG_DETERMINISTIC
-        print(colored(f"  {exec_tag} [{agent_name}] Choosing action via executor...", Color.YELLOW))
+        print(
+            colored(
+                f"  {exec_tag} [{agent_name}] Choosing action via executor...",
+                Color.YELLOW,
+            )
+        )
         action = await cognition.executor.choose_action(
             agent_id,
             perception,
@@ -689,12 +787,21 @@ class Orchestrator:
             msg_preview = ""
             if action.communication and action.communication.get("message"):
                 msg = action.communication["message"][:60]
-                msg_preview = f'\n    Message: "{msg}..."' if len(action.communication["message"]) > 60 else f'\n    Message: "{msg}"'
+                msg_preview = (
+                    f'\n    Message: "{msg}..."'
+                    if len(action.communication["message"]) > 60
+                    else f'\n    Message: "{msg}"'
+                )
             print(colored(f"    Reasoning: {action.reasoning[:80]}...", Color.CYAN))
             if msg_preview:
                 print(colored(msg_preview, Color.CYAN))
 
-        print(colored(f"  {LOG_TAG_SUCCESS} [{agent_name}] Got action: {action.action_type}", Color.GREEN))
+        print(
+            colored(
+                f"  {LOG_TAG_SUCCESS} [{agent_name}] Got action: {action.action_type}",
+                Color.GREEN,
+            )
+        )
 
         # Ensure agent_id matches the requesting agent. LLM may hallucinate wrong agent_id
         # or executor may use templates that don't populate it correctly. Overwriting here
@@ -726,24 +833,27 @@ class Orchestrator:
         # Tag world engine step based on mode/branch
         # Compute branch to tag the world update step
         has_rules_processor = bool(
-            self.simulation_rules and getattr(self.simulation_rules, "process_actions").__func__ is not SimulationRules.process_actions
+            self.simulation_rules
+            and getattr(self.simulation_rules, "process_actions").__func__
+            is not SimulationRules.process_actions
         )
-        will_use_llm = (
-            self.world_update_mode == "llm"
-            or (
-                self.world_update_mode == "auto"
-                and not has_rules_processor
-                and self.llm_provider
-                and self.llm_model
-            )
+        will_use_llm = self.world_update_mode == "llm" or (
+            self.world_update_mode == "auto"
+            and not has_rules_processor
+            and self.llm_provider
+            and self.llm_model
         )
-        print(f"  [{'LLM' if will_use_llm else '•'}] [World Engine] Processing {len(actions)} actions...")
+        print(
+            f"  [{'LLM' if will_use_llm else '•'}] [World Engine] Processing {len(actions)} actions..."
+        )
         mode = self.world_update_mode
         rules = self.simulation_rules
 
         # Helper to detect overridden process_actions
         has_rules_processor = bool(
-            rules and getattr(rules, "process_actions").__func__ is not SimulationRules.process_actions
+            rules
+            and getattr(rules, "process_actions").__func__
+            is not SimulationRules.process_actions
         )
 
         # Mode selection
@@ -840,10 +950,15 @@ class Orchestrator:
             state: New world state
         """
         import os
+
         debug_memory = os.getenv("DEBUG_MEMORY")
 
         if debug_memory:
-            print(colored(f"\n  [DEBUG_MEMORY] Tick {tick} - Creating memories...", Color.CYAN))
+            print(
+                colored(
+                    f"\n  [DEBUG_MEMORY] Tick {tick} - Creating memories...", Color.CYAN
+                )
+            )
 
         new_memories: Dict[str, List[AgentMemory]] = {}
 
@@ -869,7 +984,9 @@ class Orchestrator:
             # Store communications as memories FOR BOTH SENDER AND RECIPIENT
             if action.communication:
                 recipient = action.communication.get("to", "unknown")
-                message = action.communication.get("message") or action.communication.get("content", "")
+                message = action.communication.get(
+                    "message"
+                ) or action.communication.get("content", "")
 
                 # Sender memory: "I told X: message"
                 sender_memory = await self.memory.add_memory(
@@ -892,8 +1009,18 @@ class Orchestrator:
                 if debug_memory:
                     sender_name = self.agents[action.agent_id].name
                     msg_preview = message[:60] + "..." if len(message) > 60 else message
-                    print(colored(f"    💬 {sender_name} → {recipient}: \"{msg_preview}\"", Color.CYAN))
-                    print(colored(f"       Sender memory stored: \"I told {recipient}: ...\"", Color.CYAN))
+                    print(
+                        colored(
+                            f'    💬 {sender_name} → {recipient}: "{msg_preview}"',
+                            Color.CYAN,
+                        )
+                    )
+                    print(
+                        colored(
+                            f'       Sender memory stored: "I told {recipient}: ..."',
+                            Color.CYAN,
+                        )
+                    )
 
                 # RECIPIENT memory: "X told me: message"
                 # This is the CRITICAL fix for information diffusion!
@@ -925,7 +1052,12 @@ class Orchestrator:
 
                     if debug_memory:
                         recipient_name = self.agents[recipient_id].name
-                        print(colored(f"       Recipient memory stored: \"{recipient_name} received: ...\"", Color.CYAN))
+                        print(
+                            colored(
+                                f'       Recipient memory stored: "{recipient_name} received: ..."',
+                                Color.CYAN,
+                            )
+                        )
 
         # Store events as observations for affected agents
         for event in state.recent_events:
@@ -943,7 +1075,11 @@ class Orchestrator:
                         importance=importance,
                         tags=[
                             "event",
-                            f"severity:{event.severity}" if event.severity is not None else "severity:unknown",
+                            (
+                                f"severity:{event.severity}"
+                                if event.severity is not None
+                                else "severity:unknown"
+                            ),
                             event.category,
                         ],
                         metadata={
@@ -1117,7 +1253,9 @@ class Orchestrator:
             # fixed time intervals.
             new_memory_count = len(new_memories.get(agent_id, []))
             cadence = cognition.cadence.reflection
-            last_reflection_tick = self._get_scratchpad_value(cognition, REFLECTION_LAST_TICK_KEY)
+            last_reflection_tick = self._get_scratchpad_value(
+                cognition, REFLECTION_LAST_TICK_KEY
+            )
 
             # Check if reflection should trigger. Cadence considers both time elapsed and
             # memory count to balance insight generation with LLM cost. Skip if not ready.
@@ -1230,7 +1368,14 @@ class Orchestrator:
         for action in actions:
             # Find agent's status object in world state. Status tracks location, activity,
             # resources, and other dynamic properties. Skip if agent not found (shouldn't happen).
-            status = next((agent for agent in new_state.agents if agent.agent_id == action.agent_id), None)
+            status = next(
+                (
+                    agent
+                    for agent in new_state.agents
+                    if agent.agent_id == action.agent_id
+                ),
+                None,
+            )
             if status is None:
                 continue
 
@@ -1248,7 +1393,8 @@ class Orchestrator:
                     continue
                 entered = True
                 if occupancy is not None:
-                    # Attempt to enter new location respecting capacity; if refused, keep agent in place
+                    # Attempt to enter new location respecting capacity;
+                    # if refused, keep agent in place
                     try:
                         entered = bool(occupancy.enter(target, action.agent_id))
                     except Exception:
@@ -1292,9 +1438,8 @@ class Orchestrator:
             if action.communication and isinstance(action.communication, dict):
                 comm_to = action.communication.get("to")
             comm_str = f" comm.to={comm_to}" if comm_to else ""
-            print(
-                f"  {agent.name}: {action.action_type}{target_str}{params_str}{comm_str} - {reasoning_text}"
-            )
+            action_summary = f"{action.action_type}{target_str}{params_str}{comm_str}"
+            print(f"  {agent.name}: {action_summary} - {reasoning_text}")
 
         # Print events
         for event in state.recent_events:

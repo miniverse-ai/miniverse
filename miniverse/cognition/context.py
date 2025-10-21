@@ -8,14 +8,13 @@ functions so executor implementations have a clear contract to target.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Dict, Iterable, List
 
-import json
-from datetime import datetime
-import os
-
-from miniverse.schemas import AgentProfile, AgentPerception, AgentMemory, WorldState
+from miniverse.schemas import AgentMemory, AgentPerception, AgentProfile, WorldState
 
 
 @dataclass
@@ -50,7 +49,9 @@ class PromptContext:
         return json.dumps(self.plan_state, indent=2, default=_json_default)
 
     def perception_json(self) -> str:
-        return json.dumps(self.perception.model_dump(mode="json"), indent=2, default=_json_default)
+        return json.dumps(
+            self.perception.model_dump(mode="json"), indent=2, default=_json_default
+        )
 
     def memories_text(self, limit: int = 5) -> str:
         lines = []
@@ -124,7 +125,7 @@ async def build_prompt_context(
     plan_state: Dict[str, Any],
     memories: Iterable[AgentMemory],
     extra: Dict[str, Any] | None = None,
-    ) -> PromptContext:
+) -> PromptContext:
     """Assemble a `PromptContext` from disparate sources.
 
     Notes
@@ -149,19 +150,30 @@ async def build_prompt_context(
     # Minimal debug logging for prompt context assembly
     # Enable with DEBUG_PROMPT_CONTEXT=1
     try:
-        if os.getenv("DEBUG_PROMPT_CONTEXT", "").lower() in ("1", "true", "yes"):  # pragma: no cover
+        if os.getenv("DEBUG_PROMPT_CONTEXT", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        ):  # pragma: no cover
             agent_id = getattr(agent_profile, "agent_id", "?")
             tick = getattr(perception, "tick", "?")
             location = getattr(perception, "location", None)
             messages = getattr(perception, "messages", []) or []
             memories_count = len(ctx.memories)
             extras = ctx.extra or {}
-            has_initial_state = bool(extras.get("initial_state_agent_prompt") or extras.get("base_agent_prompt"))
+            has_initial_state = bool(
+                extras.get("initial_state_agent_prompt")
+                or extras.get("base_agent_prompt")
+            )
             has_sim_instructions = bool(extras.get("simulation_instructions"))
             available_actions = extras.get("available_actions") or []
             print(f"[PROMPT_CONTEXT] agent={agent_id} tick={tick} location={location}")
-            print(f"  memories={memories_count} messages={len(messages)} actions={len(available_actions)}")
-            print(f"  initial_state_agent_prompt={'yes' if has_initial_state else 'no'} sim_instructions={'yes' if has_sim_instructions else 'no'}")
+            print(
+                f"  memories={memories_count} messages={len(messages)} actions={len(available_actions)}"
+            )
+            print(
+                f"  initial_state_agent_prompt={'yes' if has_initial_state else 'no'} sim_instructions={'yes' if has_sim_instructions else 'no'}"
+            )
     except Exception:
         # Never let debug logging break execution
         pass

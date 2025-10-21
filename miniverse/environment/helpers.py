@@ -64,7 +64,9 @@ class GraphOccupancy:
         self.occupants(node_id).discard(agent_id)
 
 
-def shortest_path(graph: EnvironmentGraph, start: str, goal: str) -> Optional[List[str]]:
+def shortest_path(
+    graph: EnvironmentGraph, start: str, goal: str
+) -> Optional[List[str]]:
     """Return a list of node ids from start to goal using BFS.
 
     Uses breadth-first search to find shortest unweighted path. Returns None if no path
@@ -101,7 +103,9 @@ def shortest_path(graph: EnvironmentGraph, start: str, goal: str) -> Optional[Li
     return None
 
 
-def grid_shortest_path(grid: EnvironmentGrid, start: Tuple[int, int], goal: Tuple[int, int]) -> Optional[List[Tuple[int, int]]]:
+def grid_shortest_path(
+    grid: EnvironmentGrid, start: Tuple[int, int], goal: Tuple[int, int]
+) -> Optional[List[Tuple[int, int]]]:
     """Return a path of (row, col) coordinates avoiding collisions.
 
     Uses BFS to find shortest path on 2D grid with obstacles. Only explores walkable cells
@@ -116,7 +120,9 @@ def grid_shortest_path(grid: EnvironmentGrid, start: Tuple[int, int], goal: Tupl
     # Order doesn't matter for BFS correctness but affects tie-breaking for equal-length paths.
     directions = [(1, 0), (-1, 0), (0, 1), (0, -1)]
     visited = {start}
-    queue: deque[Tuple[Tuple[int, int], List[Tuple[int, int]]]] = deque([(start, [start])])
+    queue: deque[Tuple[Tuple[int, int], List[Tuple[int, int]]]] = deque(
+        [(start, [start])]
+    )
 
     def neighbors(coord: Tuple[int, int]) -> Iterable[Tuple[int, int]]:
         """Generate valid neighbor coordinates (within bounds, walkable)."""
@@ -125,7 +131,11 @@ def grid_shortest_path(grid: EnvironmentGrid, start: Tuple[int, int], goal: Tupl
             nr, nc = r + dr, c + dc
             # Check bounds (within grid) and walkability (no obstacles). Grid.is_walkable()
             # consults collision map to determine if cell is passable.
-            if 0 <= nr < grid.height and 0 <= nc < grid.width and grid.is_walkable(nr, nc):
+            if (
+                0 <= nr < grid.height
+                and 0 <= nc < grid.width
+                and grid.is_walkable(nr, nc)
+            ):
                 yield nr, nc
 
     while queue:

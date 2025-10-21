@@ -10,6 +10,10 @@ Design Philosophy:
 - Pydantic validation ensures data integrity across persistence layers
 """
 
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
+from uuid import UUID
+
 from pydantic import BaseModel, Field
 
 from miniverse.environment import (
@@ -17,10 +21,6 @@ from miniverse.environment import (
     EnvironmentGridState,
     GridTileState,
 )
-from typing import Any, Dict, List, Optional, Tuple, Union
-from datetime import datetime
-from uuid import UUID
-
 
 # ============================================================================
 # World State Schemas
@@ -47,12 +47,20 @@ class Stat(BaseModel):
     """
 
     value: StatValue = Field(..., description="Current value of the metric")
-    unit: Optional[str] = Field(None, description="Optional unit label (%, kWh, °C, etc.)")
-    label: Optional[str] = Field(None, description="Human-friendly name for UI or prompts")
-    description: Optional[str] = Field(None, description="Optional explanation of the metric")
+    unit: Optional[str] = Field(
+        None, description="Optional unit label (%, kWh, °C, etc.)"
+    )
+    label: Optional[str] = Field(
+        None, description="Human-friendly name for UI or prompts"
+    )
+    description: Optional[str] = Field(
+        None, description="Optional explanation of the metric"
+    )
     # Metadata allows scenarios to attach custom data without modifying core schema.
     # Example: {"formula": "a + b", "source": "sensor_3", "confidence": 0.95}
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Free-form scenario metadata")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Free-form scenario metadata"
+    )
 
 
 class MetricsBlock(BaseModel):
@@ -67,7 +75,9 @@ class MetricsBlock(BaseModel):
     metrics: Dict[str, Stat] = Field(default_factory=dict, description="Keyed metrics")
     # Metadata stores scenario-level data that doesn't fit metric pattern. Examples:
     # simulation config, domain-specific flags, computed aggregates, etc.
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Scenario-defined metadata")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Scenario-defined metadata"
+    )
 
     def get_metric(
         self,
@@ -145,7 +155,9 @@ class AgentStatus(BaseModel):
 
     agent_id: str = Field(..., description="Unique agent identifier")
     # Display name allows scenarios to override agent_id for prettier logs ("Alice" vs "agent_42")
-    display_name: Optional[str] = Field(None, description="Optional override for printing")
+    display_name: Optional[str] = Field(
+        None, description="Optional override for printing"
+    )
     role: Optional[str] = Field(None, description="Short summary of agent role")
     # Location enables spatial reasoning and partial observability (agents only see nearby entities)
     # For Tier-0/Tier-1 environments, location is a named zone (e.g., "habitat", "workshop")
@@ -167,10 +179,13 @@ class AgentStatus(BaseModel):
     # Attributes store per-agent metrics (health, stress, focus, quota_met, etc.)
     # Using Stat model provides units, labels, metadata for rich UI/prompts
     attributes: Dict[str, Stat] = Field(
-        default_factory=dict, description="Per-agent metrics (health, stress, quota, etc.)"
+        default_factory=dict,
+        description="Per-agent metrics (health, stress, quota, etc.)",
     )
     # Tags enable filtering/grouping (e.g., ["morning_shift", "engineering_team", "veteran"])
-    tags: List[str] = Field(default_factory=list, description="Extra labels (shift, faction, etc.)")
+    tags: List[str] = Field(
+        default_factory=list, description="Extra labels (shift, faction, etc.)"
+    )
     # Metadata stores scenario-specific data (inventory items, relationship scores, quest state)
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Scenario-defined metadata for this agent"
@@ -213,32 +228,44 @@ class AgentStatus(BaseModel):
     @property
     def health(self) -> float:
         """Health percentage (0-100). Auto-creates if missing."""
-        return float(self.get_attribute("health", default=0, unit="%", label="Health").value)
+        return float(
+            self.get_attribute("health", default=0, unit="%", label="Health").value
+        )
 
     @health.setter
     def health(self, value: float) -> None:
         """Set health percentage. Creates attribute if doesn't exist."""
-        self.get_attribute("health", default=value, unit="%", label="Health").value = value
+        self.get_attribute("health", default=value, unit="%", label="Health").value = (
+            value
+        )
 
     @property
     def stress(self) -> float:
         """Stress percentage (0-100). Auto-creates if missing."""
-        return float(self.get_attribute("stress", default=0, unit="%", label="Stress").value)
+        return float(
+            self.get_attribute("stress", default=0, unit="%", label="Stress").value
+        )
 
     @stress.setter
     def stress(self, value: float) -> None:
         """Set stress percentage. Creates attribute if doesn't exist."""
-        self.get_attribute("stress", default=value, unit="%", label="Stress").value = value
+        self.get_attribute("stress", default=value, unit="%", label="Stress").value = (
+            value
+        )
 
     @property
     def energy(self) -> float:
         """Energy percentage (0-100). Auto-creates if missing."""
-        return float(self.get_attribute("energy", default=0, unit="%", label="Energy").value)
+        return float(
+            self.get_attribute("energy", default=0, unit="%", label="Energy").value
+        )
 
     @energy.setter
     def energy(self, value: float) -> None:
         """Set energy percentage. Creates attribute if doesn't exist."""
-        self.get_attribute("energy", default=value, unit="%", label="Energy").value = value
+        self.get_attribute("energy", default=value, unit="%", label="Energy").value = (
+            value
+        )
 
     @property
     def current_activity(self) -> Optional[str]:  # pragma: no cover - simple alias
@@ -256,7 +283,8 @@ class WorldEvent(BaseModel):
 
     Events represent significant occurrences that affect agent decision-making: system alerts,
     environmental changes, agent interactions, emergent phenomena. World engine generates events
-    in response to agent actions or deterministic rules. Events are stored in WorldState.recent_events
+    in response to agent actions or deterministic rules.
+    Events are stored in WorldState.recent_events
     and pruned after a few ticks to keep state size manageable.
 
     Event flow:
@@ -270,7 +298,9 @@ class WorldEvent(BaseModel):
     event_id: str = Field(..., description="Unique event identifier")
     tick: int = Field(..., ge=0, description="Tick when event occurred")
     # Category enables filtering (e.g., show only "critical_alert" events in UI)
-    category: str = Field(..., description="Domain-specific category (outage, morale, etc.)")
+    category: str = Field(
+        ..., description="Domain-specific category (outage, morale, etc.)"
+    )
     # Description is natural language for agent perception and memory storage
     description: str = Field(..., description="Human-readable description")
     # Severity drives memory importance (high severity → high importance → more likely to influence decisions)
@@ -286,7 +316,9 @@ class WorldEvent(BaseModel):
     metrics: Dict[str, Stat] = Field(
         default_factory=dict, description="Metrics captured or impacted by this event"
     )
-    metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional contextual data")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional contextual data"
+    )
 
 
 class WorldState(BaseModel):
@@ -373,11 +405,14 @@ class AgentProfile(BaseModel):
     agent_id: str = Field(..., description="Unique agent identifier")
     # Name provides human-friendly reference for prompts and logs
     name: str = Field(..., description="Agent's full name")
-    age: Optional[int] = Field(None, ge=18, le=70, description="Age in years (optional, for human agents)")
+    age: Optional[int] = Field(
+        None, ge=18, le=70, description="Age in years (optional, for human agents)"
+    )
     # Background written as first-person interview gives LLM context for character consistency.
     # Example: "I joined the mission because my family... I've always been..."
     background: str = Field(
-        ..., description="Detailed backstory in interview style (first-person narrative)"
+        ...,
+        description="Detailed backstory in interview style (first-person narrative)",
     )
     # Role determines default behaviors and responsibilities in deterministic rules
     role: str = Field(
@@ -458,14 +493,20 @@ class VisibleGridTile(BaseModel):
     """A tile visible to the agent within their local grid view."""
 
     position: Tuple[int, int] = Field(..., description="(x, y) coordinate of the tile")
-    tile: GridTileState = Field(..., description="Metadata describing the tile contents")
+    tile: GridTileState = Field(
+        ..., description="Metadata describing the tile contents"
+    )
 
 
 class GridVisibility(BaseModel):
     """Container describing the agent's local grid view."""
 
-    center: Tuple[int, int] = Field(..., description="Agent grid position used as visibility center")
-    radius: int = Field(..., ge=0, description="Visibility radius in tiles (Chebyshev distance)")
+    center: Tuple[int, int] = Field(
+        ..., description="Agent grid position used as visibility center"
+    )
+    radius: int = Field(
+        ..., ge=0, description="Visibility radius in tiles (Chebyshev distance)"
+    )
     tiles: List[VisibleGridTile] = Field(
         default_factory=list,
         description="Tiles within the visible window around the agent",
@@ -512,7 +553,8 @@ class AgentPerception(BaseModel):
     )
     # personal_attributes = what agent feels/knows about themselves (introspection)
     personal_attributes: Dict[str, Stat] = Field(
-        default_factory=dict, description="Self-reported attributes (health, morale, etc.)"
+        default_factory=dict,
+        description="Self-reported attributes (health, morale, etc.)",
     )
     # visible_resources = shared metrics displayed on dashboards (oxygen tanks, power levels)
     # All agents see same resource state - information is public
@@ -581,19 +623,23 @@ class SimulationRun(BaseModel):
 
     id: UUID = Field(..., description="Unique run identifier")
     # start_time = wall-clock time when simulation began (not simulated time)
-    start_time: datetime = Field(..., description="When simulation started (wall-clock)")
+    start_time: datetime = Field(
+        ..., description="When simulation started (wall-clock)"
+    )
     # end_time = wall-clock time when simulation finished (None if still running)
-    end_time: Optional[datetime] = Field(None, description="When simulation ended (wall-clock)")
+    end_time: Optional[datetime] = Field(
+        None, description="When simulation ended (wall-clock)"
+    )
     # num_ticks = planned duration (set at start), may differ from actual if crashed
     num_ticks: int = Field(..., ge=0, description="Number of ticks to run")
     num_agents: int = Field(..., ge=1, description="Number of agents in simulation")
     # status tracks execution state: "running", "completed", "failed"
-    status: str = Field(
-        ..., description="Run status (running, completed, failed)"
-    )
+    status: str = Field(..., description="Run status (running, completed, failed)")
     # config stores all settings needed to reproduce this run: LLM model, scenario, physics
     # Example: {"scenario": "mars_base", "llm_model": "gpt-4", "use_physics": true}
-    config: Dict = Field(..., description="Simulation configuration for reproducibility")
+    config: Dict = Field(
+        ..., description="Simulation configuration for reproducibility"
+    )
     created_at: datetime = Field(..., description="When record was created")
 
 
@@ -705,5 +751,7 @@ class SimulationError(BaseModel):
     # error_message = human-readable description
     error_message: str = Field(..., description="Error message")
     # stack_trace = full Python traceback for debugging
-    stack_trace: Optional[str] = Field(None, description="Full stack trace if available")
+    stack_trace: Optional[str] = Field(
+        None, description="Full stack trace if available"
+    )
     created_at: datetime = Field(..., description="When record was created")

@@ -6,18 +6,19 @@ BOTH the sender and recipient get appropriate memories.
 This is the critical fix for Stanford-style information diffusion.
 """
 
-import pytest
 from datetime import datetime, timezone
 from uuid import uuid4
 
+import pytest
+
 from miniverse import (
-    Orchestrator,
+    AgentAction,
     AgentProfile,
     AgentStatus,
-    WorldState,
-    ResourceState,
     EnvironmentState,
-    AgentAction,
+    Orchestrator,
+    ResourceState,
+    WorldState,
 )
 from miniverse.memory import SimpleMemoryStream
 from miniverse.persistence import InMemoryPersistence

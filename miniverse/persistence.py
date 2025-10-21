@@ -41,22 +41,20 @@ Usage pattern:
 import asyncio
 import json
 from abc import ABC, abstractmethod
-from pathlib import Path
-from typing import Optional, List, Dict
-from uuid import UUID
 from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+from uuid import UUID
 
-from miniverse.schemas import (
-    WorldState,
-    AgentAction,
-    AgentMemory,
-    SimulationRun,
-)
+from miniverse.schemas import AgentAction, AgentMemory, SimulationRun, WorldState
+
 from .config import Config
 
 try:  # Optional dependency (only needed for PostgresPersistence)
     import asyncpg
-except ImportError:  # pragma: no cover - asyncpg may not be installed for json/memory usage
+except (
+    ImportError
+):  # pragma: no cover - asyncpg may not be installed for json/memory usage
     asyncpg = None
 
 
@@ -226,7 +224,9 @@ class PersistenceStrategy(ABC):
         pass
 
     @abstractmethod
-    async def save_actions(self, run_id: UUID, tick: int, actions: List[AgentAction]) -> None:
+    async def save_actions(
+        self, run_id: UUID, tick: int, actions: List[AgentAction]
+    ) -> None:
         """
         Save multiple agent actions for a tick.
 
@@ -443,7 +443,9 @@ class InMemoryPersistence(PersistenceStrategy):
         sorted_memories = sorted(all_memories, key=lambda m: m.tick, reverse=True)
         return sorted_memories[:limit]
 
-    async def save_actions(self, run_id: UUID, tick: int, actions: List[AgentAction]) -> None:
+    async def save_actions(
+        self, run_id: UUID, tick: int, actions: List[AgentAction]
+    ) -> None:
         """
         Save multiple agent actions for a tick.
 
@@ -551,7 +553,9 @@ class PostgresPersistence(PersistenceStrategy):
     """
 
     def __init__(self, database_url: Optional[str] = None):
-        if asyncpg is None:  # pragma: no cover - handled during runtime when dependency missing
+        if (
+            asyncpg is None
+        ):  # pragma: no cover - handled during runtime when dependency missing
             raise ImportError(
                 "asyncpg is required for PostgresPersistence. Install with `uv add asyncpg`."
             )
@@ -575,7 +579,9 @@ class PostgresPersistence(PersistenceStrategy):
         config_json = json.dumps(payload["config"])
 
         query = """
-            INSERT INTO simulation_runs (id, start_time, end_time, num_ticks, num_agents, status, config, created_at)
+            INSERT INTO simulation_runs (
+                id, start_time, end_time, num_ticks, num_agents, status, config, created_at
+            )
             VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8)
             ON CONFLICT (id) DO UPDATE
             SET start_time=$2, end_time=$3, num_ticks=$4, num_agents=$5, status=$6, config=$7::jsonb
@@ -708,8 +714,13 @@ class PostgresPersistence(PersistenceStrategy):
 
         query = """
             INSERT INTO agent_memories
-            (run_id, agent_id, tick, memory_type, content, importance, tags, metadata, embedding_key, branch_id)
-            VALUES ($1, $2, $3, $4, $5, $6, $7::text[], $8::jsonb, $9, $10)
+            (
+                run_id, agent_id, tick, memory_type, content, importance, tags, metadata,
+                embedding_key, branch_id
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7::text[], $8::jsonb, $9, $10
+            )
         """
 
         async with self.pool.acquire() as conn:
@@ -837,9 +848,7 @@ class JsonPersistence(PersistenceStrategy):
         await asyncio.to_thread(run_dir.mkdir, parents=True, exist_ok=True)
         path = run_dir / "run.json"
         data = run.model_dump(mode="json")
-        await asyncio.to_thread(
-            path.write_text, json.dumps(data, indent=2), "utf-8"
-        )
+        await asyncio.to_thread(path.write_text, json.dumps(data, indent=2), "utf-8")
 
     async def update_run_status(
         self, run_id: UUID, status: str, end_time: Optional[datetime] = None
@@ -860,9 +869,7 @@ class JsonPersistence(PersistenceStrategy):
         path = self._run_dir(run_id) / "states" / f"{tick:05d}.json"
         await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
         payload = state.model_dump(mode="json")
-        await asyncio.to_thread(
-            path.write_text, json.dumps(payload, indent=2), "utf-8"
-        )
+        await asyncio.to_thread(path.write_text, json.dumps(payload, indent=2), "utf-8")
 
     async def get_state(self, run_id: UUID, tick: int) -> Optional[WorldState]:
         path = self._run_dir(run_id) / "states" / f"{tick:05d}.json"
@@ -881,9 +888,7 @@ class JsonPersistence(PersistenceStrategy):
         path = self._run_dir(run_id) / "actions" / f"{tick:05d}.json"
         await asyncio.to_thread(path.parent.mkdir, parents=True, exist_ok=True)
         payload = [action.model_dump(mode="json") for action in actions]
-        await asyncio.to_thread(
-            path.write_text, json.dumps(payload, indent=2), "utf-8"
-        )
+        await asyncio.to_thread(path.write_text, json.dumps(payload, indent=2), "utf-8")
 
     async def get_actions(self, run_id: UUID, tick: int) -> List[AgentAction]:
         path = self._run_dir(run_id) / "actions" / f"{tick:05d}.json"
@@ -900,6 +905,7 @@ class JsonPersistence(PersistenceStrategy):
 
     async def delete_run(self, run_id: UUID) -> None:
         import shutil
+
         run_dir = self._run_dir(run_id)
         if run_dir.exists():
             await asyncio.to_thread(shutil.rmtree, run_dir)

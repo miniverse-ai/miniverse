@@ -11,7 +11,7 @@ from miniverse.schemas import AgentAction, AgentPerception
 
 from .context import PromptContext
 from .executor import Executor
-from .planner import Plan, PlanStep, Planner
+from .planner import Plan, Planner, PlanStep
 from .prompts import DEFAULT_PROMPTS, PromptLibrary
 from .reflection import ReflectionEngine, ReflectionResult
 from .renderers import render_prompt
@@ -80,7 +80,11 @@ class LLMPlanner(Planner):
 
         # Resolve prompt library with three-level fallback: instance config -> context
         # config -> system defaults. This allows maximum flexibility in prompt customization.
-        library = self.prompt_library or context.extra.get("prompt_library") or DEFAULT_PROMPTS
+        library = (
+            self.prompt_library
+            or context.extra.get("prompt_library")
+            or DEFAULT_PROMPTS
+        )
         try:
             # Look up template by name. Template contains system and user prompt components
             # with placeholders for context injection.
@@ -95,7 +99,8 @@ class LLMPlanner(Planner):
 
         # Debug logging: Show LLM prompts if enabled
         import os
-        debug_llm = os.getenv('DEBUG_LLM', '').lower() in ('1', 'true', 'yes')
+
+        debug_llm = os.getenv("DEBUG_LLM", "").lower() in ("1", "true", "yes")
         if debug_llm:
             print(f"\n{'='*80}")
             print(f"[LLM PLANNER] Agent: {agent_id}")
@@ -189,7 +194,11 @@ class LLMReflectionEngine(ReflectionEngine):
             )
 
         # Resolve prompt library with three-level fallback (same as planner)
-        library = self.prompt_library or context.extra.get("prompt_library") or DEFAULT_PROMPTS
+        library = (
+            self.prompt_library
+            or context.extra.get("prompt_library")
+            or DEFAULT_PROMPTS
+        )
         try:
             # Look up reflection template. Reflection prompts typically ask LLM to
             # identify patterns, synthesize insights, or update beliefs based on memories.
@@ -204,7 +213,8 @@ class LLMReflectionEngine(ReflectionEngine):
 
         # Debug logging: Show LLM prompts if enabled
         import os
-        debug_llm = os.getenv('DEBUG_LLM', '').lower() in ('1', 'true', 'yes')
+
+        debug_llm = os.getenv("DEBUG_LLM", "").lower() in ("1", "true", "yes")
         if debug_llm:
             print(f"\n{'='*80}")
             print(f"[LLM REFLECTION] Agent: {agent_id}")
@@ -327,7 +337,11 @@ class LLMExecutor(Executor):
         else:
             name = self.template_name or "default"
             # Resolve prompt library with three-level fallback (same as planner/reflection)
-            library = self.prompt_library or context.extra.get("prompt_library") or DEFAULT_PROMPTS
+            library = (
+                self.prompt_library
+                or context.extra.get("prompt_library")
+                or DEFAULT_PROMPTS
+            )
             try:
                 template = library.get(name)
             except KeyError:
@@ -344,7 +358,8 @@ class LLMExecutor(Executor):
 
         # Debug logging: Show LLM prompts if enabled
         import os
-        debug_llm = os.getenv('DEBUG_LLM', '').lower() in ('1', 'true', 'yes')
+
+        debug_llm = os.getenv("DEBUG_LLM", "").lower() in ("1", "true", "yes")
         if debug_llm:
             print(f"\n{'='*80}")
             print(f"[LLM EXECUTOR] Agent: {agent_id}")
@@ -377,12 +392,20 @@ class LLMExecutor(Executor):
                 print(f"Target: {action.target}")
             if action.parameters:
                 print(f"Parameters: {action.parameters}")
-            print(f"Reasoning: {action.reasoning[:200]}..." if len(action.reasoning) > 200 else f"Reasoning: {action.reasoning}")
+            print(
+                f"Reasoning: {action.reasoning[:200]}..."
+                if len(action.reasoning) > 200
+                else f"Reasoning: {action.reasoning}"
+            )
             if action.communication:
                 print(f"Communication:")
                 print(f"  To: {action.communication.get('to', 'N/A')}")
-                msg = action.communication.get('message', '')
-                print(f"  Message: {msg[:150]}..." if len(msg) > 150 else f"  Message: {msg}")
+                msg = action.communication.get("message", "")
+                print(
+                    f"  Message: {msg[:150]}..."
+                    if len(msg) > 150
+                    else f"  Message: {msg}"
+                )
             print(f"{'='*80}\n")
 
         return action

@@ -8,11 +8,11 @@ from miniverse.schemas import (
     AgentAction,
     AgentPerception,
     AgentStatus,
+    EnvironmentState,
     ResourceState,
     Stat,
     WorldEvent,
     WorldState,
-    EnvironmentState,
 )
 
 
@@ -81,9 +81,7 @@ def make_world_state() -> WorldState:
 
 def test_build_agent_perception_structure():
     world_state = make_world_state()
-    recent_messages = [
-        {"from": "beta", "message": "Expect gusts over 25 km/h."}
-    ]
+    recent_messages = [{"from": "beta", "message": "Expect gusts over 25 km/h."}]
 
     perception = build_agent_perception(
         agent_id="alpha",
@@ -96,9 +94,7 @@ def test_build_agent_perception_structure():
     assert "health" in perception.personal_attributes
     assert "power" in perception.visible_resources
     assert "temperature" in perception.environment_snapshot
-    assert perception.system_alerts == [
-        "External wind gust exceeding threshold"
-    ]
+    assert perception.system_alerts == ["External wind gust exceeding threshold"]
     assert perception.messages == [
         {"from": "beta", "message": "Expect gusts over 25 km/h."}
     ]
@@ -134,9 +130,13 @@ def test_build_agent_perception_includes_grid_visibility():
 
     assert perception.grid_position == [2, 2]
     assert perception.grid_visibility is not None
-    assert perception.grid_visibility.radius == 2  # agent metadata overrides world metadata
+    assert (
+        perception.grid_visibility.radius == 2
+    )  # agent metadata overrides world metadata
     assert len(perception.grid_visibility.tiles) == 25  # (2*radius+1)^2
-    tiles = {tuple(tile.position): tile.tile for tile in perception.grid_visibility.tiles}
+    tiles = {
+        tuple(tile.position): tile.tile for tile in perception.grid_visibility.tiles
+    }
     assert tiles[(3, 2)].game_object == "food"
     assert tiles[(1, 1)].collision is True
     assert tiles[(2, 2)].game_object == "snake_head"

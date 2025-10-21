@@ -13,7 +13,6 @@ from typing import Any, Iterable, Protocol
 from miniverse.schemas import AgentMemory
 
 from .context import PromptContext
-
 from .scratchpad import Scratchpad
 
 
