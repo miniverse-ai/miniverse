@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 
 import pytest
 
+from miniverse.cognition import AgentCognition, DefaultRuleBasedExecutor
+from miniverse.cognition.llm import LLMExecutor
 from miniverse.orchestrator import Orchestrator
 from miniverse.schemas import (
     AgentAction,
@@ -25,8 +27,6 @@ from miniverse.schemas import (
     WorldState,
 )
 from miniverse.simulation_rules import SimulationRules
-from miniverse.cognition import AgentCognition, DefaultRuleBasedExecutor
-from miniverse.cognition.llm import LLMExecutor
 
 
 class RulesNoProcessor(SimulationRules):
@@ -37,7 +37,9 @@ class RulesNoProcessor(SimulationRules):
         updated.tick = tick
         return updated
 
-    def validate_action(self, action: AgentAction, state: WorldState) -> bool:  # pragma: no cover - trivial
+    def validate_action(
+        self, action: AgentAction, state: WorldState
+    ) -> bool:  # pragma: no cover - trivial
         return True
 
 
@@ -49,10 +51,14 @@ class RulesWithProcessor(SimulationRules):
         updated.tick = tick
         return updated
 
-    def validate_action(self, action: AgentAction, state: WorldState) -> bool:  # pragma: no cover - trivial
+    def validate_action(
+        self, action: AgentAction, state: WorldState
+    ) -> bool:  # pragma: no cover - trivial
         return True
 
-    def process_actions(self, state: WorldState, actions: list[AgentAction], tick: int) -> WorldState:
+    def process_actions(
+        self, state: WorldState, actions: list[AgentAction], tick: int
+    ) -> WorldState:
         new_state = state.model_copy(deep=True)
         new_state.tick = tick
         # Mark agent activity according to the action taken
@@ -68,7 +74,7 @@ def _world_state_single_agent() -> tuple[WorldState, AgentProfile]:
         tick=0,
         timestamp=datetime.now(timezone.utc),
         environment=EnvironmentState(metrics={}),
-        resources=ResourceState(metrics={"power_kwh": Stat(value=100.0, unit="kWh")} ),
+        resources=ResourceState(metrics={"power_kwh": Stat(value=100.0, unit="kWh")}),
         agents=[
             AgentStatus(
                 agent_id="alpha",
@@ -121,6 +127,7 @@ async def test_executor_tag_deterministic(monkeypatch):
 @pytest.mark.asyncio
 async def test_executor_tag_llm(monkeypatch):
     world_state, profile = _world_state_single_agent()
+
     # Mock LLM action to avoid network
     async def fake_action(*args, **kwargs):
         return AgentAction(
@@ -137,7 +144,9 @@ async def test_executor_tag_llm(monkeypatch):
     async def fake_call_llm_with_retries(**kwargs):
         return await fake_action()
 
-    monkeypatch.setattr("miniverse.cognition.llm.call_llm_with_retries", fake_call_llm_with_retries)
+    monkeypatch.setattr(
+        "miniverse.cognition.llm.call_llm_with_retries", fake_call_llm_with_retries
+    )
 
     cognition = AgentCognition(executor=LLMExecutor(template_name="default"))
     orchestrator = Orchestrator(
@@ -185,7 +194,9 @@ async def test_world_update_tag_modes(monkeypatch):
         state = args[0]
         return state.model_copy(update={"tick": kwargs.get("tick", 1)})
 
-    monkeypatch.setattr("miniverse.orchestrator.process_world_update", fake_world_update)
+    monkeypatch.setattr(
+        "miniverse.orchestrator.process_world_update", fake_world_update
+    )
 
     orch_llm = Orchestrator(
         world_state=world_state,
@@ -234,5 +245,3 @@ async def test_world_update_tag_modes(monkeypatch):
     with contextlib.redirect_stdout(buf4):
         await orch_auto_llm.run(num_ticks=1)
     assert "[LLM] [World Engine] Processing" in buf4.getvalue()
-
-

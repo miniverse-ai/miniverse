@@ -1,0 +1,77 @@
+name: PII Detection
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  pii-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Download spaCy model (optional)
+        run: |
+          uv run python -c "import spacy; spacy.cli.download('en_core_web_lg')" || echo "spaCy model download failed, using regex fallback"
+
+      - name: Run PII detection
+        run: |
+          echo "🔍 Scanning for Personally Identifiable Information (PII)..."
+          uv run python scripts/pii_detector.py --glob "*.py" --glob "*.sh" --glob "*.yaml" --glob "*.yml" --glob "*.json" --glob "*.toml" --json --fail-on-pii > pii_results.json
+
+      - name: Upload PII scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pii-scan-results
+          path: pii_results.json
+          retention-days: 30
+
+      - name: Comment PR with PII results
+        if: github.event_name == 'pull_request' && failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const results = JSON.parse(fs.readFileSync('pii_results.json', 'utf8'));
+
+            let comment = '## 🚨 PII Detected\n\n';
+            comment += 'The following files contain potential Personally Identifiable Information:\n\n';
+
+            results.results.forEach(result => {
+              if (result.has_pii) {
+                comment += `### 📁 ${result.file}\n`;
+                result.pii_found.forEach(pii => {
+                  comment += `- **${pii.entity_type}** (confidence: ${(pii.confidence * 100).toFixed(1)}%) at line ${pii.line_number}: \`${pii.text}\`\n`;
+                });
+                comment += '\n';
+              }
+            });
+
+            comment += '---\n*Please remove or anonymize this information before merging.*';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

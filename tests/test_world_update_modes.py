@@ -1,18 +1,19 @@
-import pytest
 from datetime import datetime, timezone
 
+import pytest
+
 from miniverse import Orchestrator
+from miniverse.cognition import AgentCognition
+from miniverse.cognition.executor import Executor
 from miniverse.schemas import (
     AgentAction,
     AgentProfile,
     AgentStatus,
-    WorldState,
     EnvironmentState,
     ResourceState,
+    WorldState,
 )
 from miniverse.simulation_rules import SimulationRules
-from miniverse.cognition import AgentCognition
-from miniverse.cognition.executor import Executor
 
 
 class RulesWithDeterministicProcessor(SimulationRules):
@@ -25,7 +26,9 @@ class RulesWithDeterministicProcessor(SimulationRules):
         return True
 
     # Deterministic world update hook
-    def process_actions(self, state: WorldState, actions: list[AgentAction], tick: int) -> WorldState:
+    def process_actions(
+        self, state: WorldState, actions: list[AgentAction], tick: int
+    ) -> WorldState:
         updated = state.model_copy(deep=True)
         # Mark via metadata to assert branch was taken
         updated.metadata["processed_by"] = "rules"
@@ -37,7 +40,16 @@ class RulesWithDeterministicProcessor(SimulationRules):
 
 
 class DummyExec(Executor):
-    async def choose_action(self, agent_id, perception, scratchpad, *, plan=None, plan_step=None, context=None):
+    async def choose_action(
+        self,
+        agent_id,
+        perception,
+        scratchpad,
+        *,
+        plan=None,
+        plan_step=None,
+        context=None,
+    ):
         return AgentAction(
             agent_id=agent_id,
             tick=perception.tick,
@@ -84,4 +96,3 @@ async def test_deterministic_world_update_branch_taken():
 
     result = await orch.run(num_ticks=1)
     assert result["final_state"].metadata.get("processed_by") == "rules"
-

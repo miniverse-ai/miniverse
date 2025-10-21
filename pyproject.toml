@@ -22,13 +22,6 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-
-[project.urls]
-Homepage = "https://github.com/miniverse-ai/miniverse"
-Documentation = "https://github.com/miniverse-ai/miniverse/blob/main/docs/README.md"
-Repository = "https://github.com/miniverse-ai/miniverse"
-Issues = "https://github.com/miniverse-ai/miniverse/issues"
-Changelog = "https://github.com/miniverse-ai/miniverse/blob/main/CHANGELOG.md"
 dependencies = [
     "pydantic>=2.0.0",
     "python-dotenv>=1.0.0",
@@ -39,14 +32,28 @@ dependencies = [
     "tenacity>=8.2.3",
 ]
 
+[tool.setuptools.packages.find]
+exclude = ["tests*", "docs*", "examples*", "runs*", "scripts*"]
+
+[project.urls]
+Homepage = "https://github.com/miniverse-ai/miniverse"
+Documentation = "https://github.com/miniverse-ai/miniverse/blob/main/docs/README.md"
+Repository = "https://github.com/miniverse-ai/miniverse"
+Issues = "https://github.com/miniverse-ai/miniverse/issues"
+Changelog = "https://github.com/miniverse-ai/miniverse/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
+    "presidio-analyzer>=2.2.0",
+    "presidio-anonymizer>=2.2.0",
+    "spacy>=3.7.0",
 ]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "pytest-asyncio>=1.2.0",
 ]

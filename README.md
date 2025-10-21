@@ -30,6 +30,109 @@ uv sync
 
 Run examples with `uv run ...`. A PyPI package is not published yet.
 
+## Configuration
+
+Miniverse supports multiple LLM providers through environment variables. The library defaults to OpenAI but can be configured for other providers.
+
+### OpenAI (Default)
+
+```bash
+export LLM_PROVIDER=openai
+export LLM_MODEL=gpt-5-nano
+export OPENAI_API_KEY=sk-your-openai-key
+```
+
+### OpenRouter
+
+OpenRouter provides access to multiple LLM models through a unified API. Use OpenRouter for accessing models like Claude, Llama, Gemini, and others.
+
+```bash
+export LLM_PROVIDER=openai  # Keep as 'openai' for OpenRouter compatibility
+export LLM_MODEL=meta-llama/llama-3-70b-instruct  # Use OpenRouter model names
+export OPENAI_API_KEY=sk-or-v1-your-openrouter-key  # OpenRouter API key (starts with 'sk-or-v1-')
+export OPENAI_API_BASE=https://openrouter.ai/api/v1  # OpenRouter endpoint
+```
+
+**OpenRouter Model Examples:**
+- `meta-llama/llama-3-70b-instruct` - Llama 3 70B
+- `anthropic/claude-3-5-sonnet` - Claude 3.5 Sonnet
+- `google/gemini-pro` - Gemini Pro
+- `openai/gpt-4-turbo` - GPT-4 Turbo
+
+### Anthropic
+
+```bash
+export LLM_PROVIDER=anthropic
+export LLM_MODEL=claude-3-5-sonnet-20241022
+export ANTHROPIC_API_KEY=sk-ant-your-anthropic-key
+```
+
+## Security: PII Detection
+
+Miniverse includes automated detection of Personally Identifiable Information (PII) to prevent accidental exposure of sensitive data. The system uses Microsoft's Presidio library to scan for:
+
+- **API Keys & Tokens** - OpenAI, OpenRouter, and generic API keys
+- **Email Addresses** - Personal and business email detection
+- **Phone Numbers** - Various phone number formats
+- **File Paths** - User-specific file paths that may contain usernames
+- **IP Addresses** - IPv4 address detection
+- **Credit Card Numbers** - Potential financial data
+
+### Pre-commit Protection
+
+Install pre-commit hooks to automatically scan for PII before each commit:
+
+```bash
+# Install pre-commit hooks
+uv run pre-commit install
+
+# The PII detector will run on every commit
+git add .
+git commit -m "Add new feature"
+# PII scan runs automatically - commit will fail if PII is detected
+```
+
+### Manual Scanning
+
+Scan specific files or entire directories for PII:
+
+```bash
+# Scan all Python files
+uv run python scripts/pii_detector.py --glob "*.py"
+
+# Scan specific files
+uv run python scripts/pii_detector.py README.md config.py
+
+# JSON output for CI/CD integration
+uv run python scripts/pii_detector.py --glob "*.py" --json
+
+# Fail on PII detection (for CI/CD)
+uv run python scripts/pii_detector.py --glob "*.py" --fail-on-pii
+```
+
+### CI/CD Integration
+
+GitHub Actions automatically scan for PII on every push and pull request. If PII is detected:
+
+- ❌ The build will fail
+- 💬 A comment will be added to the PR with details
+- 📊 Scan results are uploaded as artifacts
+
+### Advanced Configuration
+
+The PII detector is smart about false positives:
+
+- ✅ **Allows**: Author emails in `pyproject.toml`, example file paths in documentation
+- ❌ **Blocks**: Real API keys, personal emails in code, user-specific file paths
+
+For full Presidio functionality with spaCy NLP, install the language model:
+
+```bash
+python -m spacy download en_core_web_lg
+```
+
+Without spaCy, the system falls back to reliable regex patterns.
+
 ## Tour the examples
 
 Each example folder ships a README with prompts, flags, and debugging tips.
@@ -63,6 +166,16 @@ Run:
 export LLM_PROVIDER=openai
 export LLM_MODEL=gpt-5-nano
 export OPENAI_API_KEY=sk-your-key
+uv run python examples/smallville/valentines_party.py
+```
+
+Or with OpenRouter:
+
+```bash
+export LLM_PROVIDER=openai
+export LLM_MODEL=meta-llama/llama-3-70b-instruct
+export OPENAI_API_KEY=sk-or-v1-your-openrouter-key
+export OPENAI_API_BASE=https://openrouter.ai/api/v1
 uv run python examples/smallville/valentines_party.py
 ```
 

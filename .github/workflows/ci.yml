@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Run linting
+        run: |
+          uv run pre-commit run --all-files
+
+      - name: Run tests
+        run: |
+          uv run python -m pytest tests/ -v
+
+      - name: PII Scan
+        run: |
+          echo "🔍 Scanning for PII..."
+          uv run python scripts/pii_detector.py --glob "*.py" --glob "*.sh" --glob "*.yaml" --glob "*.yml" --glob "*.json" --glob "*.toml" --fail-on-pii

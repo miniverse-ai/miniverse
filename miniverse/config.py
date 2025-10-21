@@ -6,6 +6,7 @@ Loads configuration from environment variables with sensible defaults.
 
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 # Load .env file if it exists
@@ -22,6 +23,8 @@ class Config:
     # API Keys
     ANTHROPIC_API_KEY: str | None = os.getenv("ANTHROPIC_API_KEY")
     OPENAI_API_KEY: str | None = os.getenv("OPENAI_API_KEY")
+    OPENROUTER_API_KEY: str | None = os.getenv("OPENROUTER_API_KEY")
+    OPENAI_API_BASE: str | None = os.getenv("OPENAI_API_BASE")
 
     # Database Configuration
     DATABASE_URL: str = os.getenv("DATABASE_URL", "postgresql://localhost/miniverse")
@@ -45,10 +48,26 @@ class Config:
                 "ANTHROPIC_API_KEY is required when using the 'anthropic' provider"
             )
 
-        if cls.LLM_PROVIDER == "openai" and not cls.OPENAI_API_KEY:
-            raise ValueError(
-                "OPENAI_API_KEY is required when using the 'openai' provider"
+        if cls.LLM_PROVIDER == "openai":
+            # Check if using OpenRouter (detected by base URL)
+            is_openrouter = (
+                cls.OPENAI_API_BASE and "openrouter.ai" in cls.OPENAI_API_BASE
             )
+
+            if is_openrouter:
+                # OpenRouter validation
+                if not cls.OPENROUTER_API_KEY:
+                    raise ValueError(
+                        "OPENROUTER_API_KEY is required when using OpenRouter"
+                    )
+                if not cls.OPENROUTER_API_KEY.startswith("sk-or-v1-"):
+                    raise ValueError("OpenRouter API key must start with 'sk-or-v1-'")
+            else:
+                # Standard OpenAI validation
+                if not cls.OPENAI_API_KEY:
+                    raise ValueError(
+                        "OPENAI_API_KEY is required when using the 'openai' provider"
+                    )
 
     @classmethod
     def display(cls) -> str:
@@ -57,8 +76,16 @@ class Config:
             "Miniverse Configuration:",
             f"  LLM Provider: {cls.LLM_PROVIDER}",
             f"  LLM Model: {cls.LLM_MODEL}",
-            f"  Database: {cls.DATABASE_URL}",
-            f"  Default Ticks: {cls.DEFAULT_TICK_COUNT}",
-            f"  Tick Duration: {cls.TICK_DURATION_SECONDS}s",
         ]
+
+        if cls.OPENAI_API_BASE:
+            lines.append(f"  OpenAI API Base: {cls.OPENAI_API_BASE}")
+
+        lines.extend(
+            [
+                f"  Database: {cls.DATABASE_URL}",
+                f"  Default Ticks: {cls.DEFAULT_TICK_COUNT}",
+                f"  Tick Duration: {cls.TICK_DURATION_SECONDS}s",
+            ]
+        )
         return "\n".join(lines)

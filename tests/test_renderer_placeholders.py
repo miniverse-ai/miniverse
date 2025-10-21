@@ -1,8 +1,15 @@
 from datetime import datetime, timezone
-from miniverse.cognition.prompts import PromptTemplate, DEFAULT_PROMPTS
+
 from miniverse.cognition.context import PromptContext
+from miniverse.cognition.prompts import DEFAULT_PROMPTS, PromptTemplate
 from miniverse.cognition.renderers import render_prompt
-from miniverse.schemas import AgentPerception, AgentProfile, WorldState, EnvironmentState, ResourceState
+from miniverse.schemas import (
+    AgentPerception,
+    AgentProfile,
+    EnvironmentState,
+    ResourceState,
+    WorldState,
+)
 
 
 def _minimal_context(extra=None):
@@ -36,7 +43,9 @@ def _minimal_context(extra=None):
 
 def test_base_agent_prompt_goes_to_user_with_fallback():
     # Template WITH placeholder should inject initial_state_agent_prompt
-    tmpl = PromptTemplate(name="t", system="SYSTEM", user="{{initial_state_agent_prompt}}\n\nUSER")
+    tmpl = PromptTemplate(
+        name="t", system="SYSTEM", user="{{initial_state_agent_prompt}}\n\nUSER"
+    )
     ctx = _minimal_context(extra={"initial_state_agent_prompt": "AGENT_RULES"})
     rendered = render_prompt(tmpl, ctx, include_default=False)
     assert rendered.user.startswith("AGENT_RULES")
@@ -45,7 +54,11 @@ def test_base_agent_prompt_goes_to_user_with_fallback():
 def test_action_catalog_is_rendered():
     tmpl = PromptTemplate(name="t", system="S", user="{{action_catalog}}")
     actions = [
-        {"name": "move", "schema": {"action_type": "move"}, "examples": [{"action_type": "move", "parameters": {"direction": "up"}}]},
+        {
+            "name": "move",
+            "schema": {"action_type": "move"},
+            "examples": [{"action_type": "move", "parameters": {"direction": "up"}}],
+        },
     ]
     ctx = _minimal_context(extra={"available_actions": actions})
     rendered = render_prompt(tmpl, ctx, include_default=False)
@@ -55,7 +68,9 @@ def test_action_catalog_is_rendered():
 
 def test_character_prompt_in_system_with_fallback():
     # Template WITH character placeholder should inject character prompt
-    tmpl = PromptTemplate(name="t", system="{{character_prompt}}\n\nSYSTEM", user="USER")
+    tmpl = PromptTemplate(
+        name="t", system="{{character_prompt}}\n\nSYSTEM", user="USER"
+    )
     ctx = _minimal_context()
     rendered = render_prompt(tmpl, ctx, include_default=False)
     assert rendered.system.startswith("I am Alice Smith.")
@@ -69,4 +84,3 @@ def test_default_template_places_identity_and_base_correctly():
     assert rendered.system.startswith("I am Alice Smith.")
     # Base prompt at the start of USER (via placeholder)
     assert rendered.user.startswith("Focus on safety.")
-

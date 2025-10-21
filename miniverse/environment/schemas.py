@@ -17,7 +17,8 @@ class LocationNodeState(BaseModel):
 
     name: str
     capacity: Optional[int] = Field(
-        None, description="Maximum occupancy; None means unbounded",
+        None,
+        description="Maximum occupancy; None means unbounded",
     )
     metadata: Dict[str, str] = Field(
         default_factory=dict,
@@ -58,4 +59,3 @@ class EnvironmentGridState(BaseModel):
         default_factory=dict,
         description="Sparse map: (row, col) → tile metadata",
     )
-

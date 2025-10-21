@@ -1,0 +1,54 @@
+# Pre-commit hooks configuration for Miniverse
+# Install with: pre-commit install
+# Run on all files: pre-commit run --all-files
+
+repos:
+  # Standard hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.(md|txt)$
+      - id: end-of-file-fixer
+        exclude: \.(md|txt)$
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-case-conflict
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+
+  # Python-specific hooks
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        language_version: python3
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        exclude: ^(tests/|scripts/|examples/)
+        args: ['--max-line-length=100', '--extend-ignore=E203,W503']
+
+  # Custom PII detection hook
+  - repo: local
+    hooks:
+      - id: pii-detector
+        name: PII Detection
+        entry: uv run python scripts/pii_detector.py
+        language: system
+        files: \.(py|sh|yaml|yml|json|toml)$
+        exclude: ^\.git/|^__pycache__/|^tests/.*\.log$|\.lock$|^docs/
+        args: [--fail-on-pii]
+        pass_filenames: true
+        description: "Scan for Personally Identifiable Information (PII) before commit"

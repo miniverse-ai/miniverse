@@ -14,7 +14,6 @@ from typing import Optional
 
 from .planner import Plan
 
-
 DEFAULT_OFFSET = 1
 """Default tick offset so cadence aligns with tick=1 runs."""
 
@@ -100,7 +99,9 @@ PLANNER_LAST_TICK_KEY = "__planner_last_tick"
 REFLECTION_LAST_TICK_KEY = "__reflection_last_tick"
 
 
-def tick_to_time_block(*, tick: int, ticks_per_block: int, block_label: str = "day") -> dict[str, int]:
+def tick_to_time_block(
+    *, tick: int, ticks_per_block: int, block_label: str = "day"
+) -> dict[str, int]:
     """Translate a tick index into higher-level time blocks.
 
     Parameters
@@ -127,4 +128,3 @@ def tick_to_time_block(*, tick: int, ticks_per_block: int, block_label: str = "d
     block_index = (tick - 1) // ticks_per_block
     offset = ((tick - 1) % ticks_per_block) + 1
     return {"label": block_label, "block": block_index, "offset": offset}
-

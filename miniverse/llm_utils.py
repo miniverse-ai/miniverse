@@ -7,9 +7,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Sequence, TypeVar
 
 from mirascope import llm
+from openai import AsyncOpenAI
 from pydantic import BaseModel, ValidationError
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt
 
+from .config import Config
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
@@ -107,7 +109,9 @@ async def call_llm_with_retries(
     llm_model: str,
     response_model: type[ModelT],
     max_attempts: int = 3,
-    feedback_builder: Callable[[ValidationError], ValidationFeedback] = inject_validation_feedback,
+    feedback_builder: Callable[
+        [ValidationError], ValidationFeedback
+    ] = inject_validation_feedback,
 ) -> ModelT:
     """Invoke a structured LLM call with validation-aware retries.
 
@@ -122,7 +126,9 @@ async def call_llm_with_retries(
     # Combine system and user prompts with double newline separator. This simplifies
     # retry logic - we append feedback to combined prompt rather than managing multiple
     # prompt components separately.
-    prompt_sections = [section.strip() for section in (system_prompt, user_prompt) if section.strip()]
+    prompt_sections = [
+        section.strip() for section in (system_prompt, user_prompt) if section.strip()
+    ]
     base_prompt = "\n\n".join(prompt_sections)
 
     # Track validation feedback across retries. Starts None (no feedback), gets populated
@@ -132,9 +138,34 @@ async def call_llm_with_retries(
     # Define LLM call using Mirascope decorator. The decorator handles provider-specific
     # API calls, response parsing, and schema validation. response_model triggers Pydantic
     # validation on LLM output - raises ValidationError if output doesn't match schema.
-    @llm.call(provider=llm_provider, model=llm_model, response_model=response_model)
-    async def _invoke(prompt: str) -> str:
-        return prompt
+    #
+    # For OpenRouter, we create a custom OpenAI client with the correct base_url
+    # and pass it to Mirascope.
+    # This preserves the Mirascope integration while enabling OpenRouter support.
+    is_openrouter = Config.OPENAI_API_BASE and "openrouter.ai" in Config.OPENAI_API_BASE
+
+    if is_openrouter and llm_provider == "openai":
+        # Create custom OpenAI client for OpenRouter
+        custom_client = AsyncOpenAI(
+            api_key=Config.OPENROUTER_API_KEY,
+            base_url=Config.OPENAI_API_BASE,
+        )
+
+        @llm.call(
+            provider=llm_provider,
+            model=llm_model,
+            response_model=response_model,
+            json_mode=True,
+            client=custom_client,
+        )
+        async def _invoke(prompt: str) -> str:
+            return prompt
+
+    else:
+        # Standard Mirascope call for OpenAI or other providers
+        @llm.call(provider=llm_provider, model=llm_model, response_model=response_model)
+        async def _invoke(prompt: str) -> str:
+            return prompt
 
     attempt_number = 0
     # AsyncRetrying from tenacity handles retry logic. retry_if_exception_type(ValidationError)
@@ -184,9 +215,7 @@ async def call_llm_with_retries(
             except asyncio.TimeoutError as exc:  # pragma: no cover - timeout path
                 # Timeout doesn't trigger retry - propagate immediately. Timeouts usually
                 # indicate provider outages or network issues that won't resolve with retry.
-                print(
-                    f"LLM call timed out after 120s for {response_model.__name__}."
-                )
+                print(f"LLM call timed out after 120s for {response_model.__name__}.")
                 raise exc
 
     # AsyncRetrying with reraise=True will always exit via return or raise. This line

@@ -4,11 +4,11 @@ This is intentionally minimal and skipped by default unless LLM env vars are set
 """
 
 import os
+
 import pytest
 
 from miniverse.llm_utils import call_llm_with_retries
 from miniverse.schemas import AgentAction
-
 
 REQUIRED_ENVS = ("LLM_PROVIDER", "LLM_MODEL")
 
@@ -43,4 +43,3 @@ async def test_real_llm_returns_agent_action():
     assert isinstance(action, AgentAction)
     assert action.agent_id == "tester"
     assert action.action_type == "rest"
-
