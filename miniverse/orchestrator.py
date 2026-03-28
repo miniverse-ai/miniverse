@@ -1409,78 +1409,159 @@ class Orchestrator:
             new_memories.setdefault(action.agent_id, []).append(memory)
 
             # Store communication memories.
+            # Two modes: "talk" (broadcast to co-located agents) and
+            # "message"/"communicate" (private direct to one recipient).
             if action.communication:
-                recipient = action.communication.get("to", "unknown")
                 message = action.communication.get("message") or action.communication.get("content", "")
-                recipient_id = self._resolve_agent_id(recipient)
                 sender_name = self.agents[action.agent_id].name
                 msg_preview = message[:60] + "..." if len(message) > 60 else message
+                is_talk = action.action_type == "talk"
 
-                if debug_memory:
-                    print(colored(f"    💬 {sender_name} → {recipient}: \"{msg_preview}\"", Color.CYAN))
+                if is_talk:
+                    # ── TALK: Broadcast to all agents in the same location ──
+                    sender_location = None
+                    for agent_status in state.agents:
+                        if agent_status.agent_id == action.agent_id:
+                            sender_location = agent_status.location
+                            break
 
-                # In sidecar mode, non-communicate actions can attach short messages.
-                # Storing sender+recipient communication memories for every sidecar
-                # quickly floods retrieval with coordination chatter. For sidecar payloads,
-                # keep recipient memory only (enough for information diffusion).
-                sidecar_payload = (
-                    self._is_sidecar_mode_enabled() and action.action_type != "communicate"
-                )
-                store_sender_memory = not sidecar_payload
-                if sidecar_payload and (not recipient_id or recipient_id == "unknown"):
-                    # Fall back to sender-only memory if we cannot resolve recipient.
-                    store_sender_memory = True
-                if store_sender_memory:
+                    # Directed-at target (optional — who the speaker is addressing)
+                    addressed_to = action.communication.get("to", "")
+
+                    if debug_memory:
+                        print(colored(f"    🗣️ {sender_name} [talk in {sender_location}]: \"{msg_preview}\"", Color.CYAN))
+
+                    # Sender memory
+                    sender_content = f"I said aloud{' to ' + addressed_to if addressed_to else ''}: {message}"
                     sender_memory = await self.memory.add_memory(
                         run_id=self.run_id,
                         agent_id=action.agent_id,
                         tick=tick,
                         memory_type="communication",
-                        content=f"I told {recipient}: {message}",
+                        content=sender_content,
                         importance=6,
-                        tags=["communication", f"to:{recipient}"],
+                        tags=["communication", "talk", f"location:{sender_location}"],
                         metadata={
                             "message": message,
-                            "recipient": recipient,
-                            "action_type": action.action_type,
+                            "addressed_to": addressed_to,
+                            "location": sender_location,
+                            "action_type": "talk",
                             "role": "sender",
+                            "mode": "broadcast",
                         },
                     )
                     new_memories.setdefault(action.agent_id, []).append(sender_memory)
-                    if debug_memory:
-                        print(colored(f"       Sender memory stored: \"I told {recipient}: ...\"", Color.CYAN))
 
-                if recipient_id and recipient_id != "unknown":
-                    recipient_memory = await self.memory.add_memory(
-                        run_id=self.run_id,
-                        agent_id=recipient_id,  # Use resolved agent_id, not raw name
-                        tick=tick,
-                        memory_type="communication",
-                        content=f"{sender_name} told me: {message}",
-                        importance=7 if store_sender_memory else 5,
-                        tags=[
-                            "communication",
-                            f"from:{action.agent_id}",
-                            "sidecar" if not store_sender_memory else "direct",
-                        ],
-                        metadata={
-                            "message": message,
-                            "sender": action.agent_id,
-                            "sender_name": sender_name,
-                            "action_type": action.action_type,
-                            "role": "recipient",
-                        },
-                    )
-                    new_memories.setdefault(recipient_id, []).append(recipient_memory)
-
-                    if debug_memory:
-                        recipient_name = self.agents[recipient_id].name
-                        memory_note = (
-                            "Recipient memory stored"
-                            if store_sender_memory
-                            else "Sidecar recipient memory stored"
+                    # Recipient memories for all co-located agents (except sender)
+                    for agent_status in state.agents:
+                        if agent_status.agent_id == action.agent_id:
+                            continue
+                        if agent_status.location != sender_location:
+                            continue
+                        listener_id = agent_status.agent_id
+                        is_addressed = addressed_to and self._resolve_agent_id(addressed_to) == listener_id
+                        listener_content = (
+                            f"{sender_name} said{' to me' if is_addressed else ' aloud'}: {message}"
                         )
-                        print(colored(f"       {memory_note}: \"{recipient_name} received: ...\"", Color.CYAN))
+                        listener_memory = await self.memory.add_memory(
+                            run_id=self.run_id,
+                            agent_id=listener_id,
+                            tick=tick,
+                            memory_type="communication",
+                            content=listener_content,
+                            importance=7 if is_addressed else 5,
+                            tags=[
+                                "communication", "talk", "overheard",
+                                f"from:{action.agent_id}",
+                                f"location:{sender_location}",
+                            ],
+                            metadata={
+                                "message": message,
+                                "sender": action.agent_id,
+                                "sender_name": sender_name,
+                                "action_type": "talk",
+                                "role": "recipient",
+                                "mode": "broadcast",
+                                "addressed": is_addressed,
+                            },
+                        )
+                        new_memories.setdefault(listener_id, []).append(listener_memory)
+                        if debug_memory:
+                            listener_name = self.agents[listener_id].name
+                            note = "addressed" if is_addressed else "overheard"
+                            print(colored(f"       {listener_name} {note}: \"{msg_preview[:40]}...\"", Color.CYAN))
+
+                else:
+                    # ── MESSAGE / COMMUNICATE: Private direct to one recipient ──
+                    recipient = action.communication.get("to", "unknown")
+                    recipient_id = self._resolve_agent_id(recipient)
+
+                    if debug_memory:
+                        print(colored(f"    💬 {sender_name} → {recipient}: \"{msg_preview}\"", Color.CYAN))
+
+                    # In sidecar mode, non-communicate actions can attach short messages.
+                    # Storing sender+recipient communication memories for every sidecar
+                    # quickly floods retrieval with coordination chatter. For sidecar payloads,
+                    # keep recipient memory only (enough for information diffusion).
+                    sidecar_payload = (
+                        self._is_sidecar_mode_enabled() and action.action_type not in ("communicate", "message")
+                    )
+                    store_sender_memory = not sidecar_payload
+                    if sidecar_payload and (not recipient_id or recipient_id == "unknown"):
+                        store_sender_memory = True
+                    if store_sender_memory:
+                        sender_memory = await self.memory.add_memory(
+                            run_id=self.run_id,
+                            agent_id=action.agent_id,
+                            tick=tick,
+                            memory_type="communication",
+                            content=f"I messaged {recipient}: {message}",
+                            importance=6,
+                            tags=["communication", "message", f"to:{recipient}"],
+                            metadata={
+                                "message": message,
+                                "recipient": recipient,
+                                "action_type": action.action_type,
+                                "role": "sender",
+                                "mode": "direct",
+                            },
+                        )
+                        new_memories.setdefault(action.agent_id, []).append(sender_memory)
+                        if debug_memory:
+                            print(colored(f"       Sender memory stored: \"I messaged {recipient}: ...\"", Color.CYAN))
+
+                    if recipient_id and recipient_id != "unknown":
+                        recipient_memory = await self.memory.add_memory(
+                            run_id=self.run_id,
+                            agent_id=recipient_id,
+                            tick=tick,
+                            memory_type="communication",
+                            content=f"{sender_name} messaged me: {message}",
+                            importance=7 if store_sender_memory else 5,
+                            tags=[
+                                "communication", "message",
+                                f"from:{action.agent_id}",
+                                "sidecar" if not store_sender_memory else "direct",
+                            ],
+                            metadata={
+                                "message": message,
+                                "sender": action.agent_id,
+                                "sender_name": sender_name,
+                                "action_type": action.action_type,
+                                "role": "recipient",
+                                "mode": "direct",
+                            },
+                        )
+                        new_memories.setdefault(recipient_id, []).append(recipient_memory)
+
+                        if debug_memory:
+                            recipient_name = self.agents[recipient_id].name
+                            memory_note = (
+                                "Recipient memory stored"
+                                if store_sender_memory
+                                else "Sidecar recipient memory stored"
+                            )
+                            print(colored(f"       {memory_note}: \"{recipient_name} received: ...\"", Color.CYAN))
 
         # Store events as observations for affected agents
         for event in state.recent_events:

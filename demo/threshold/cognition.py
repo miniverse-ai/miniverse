@@ -175,9 +175,15 @@ def _build_threshold_prompt_library():
                 "{{character_prompt}}\n\n"
                 "You are living in a cyberpunk district. Stay in character.\n"
                 "Choose one action that best advances this character's goals this tick.\n"
-                "Use natural social behavior: move, communicate, investigate, work, monitor, or rest.\n"
-                "If action_type is 'communicate', target MUST be a valid agent_id and "
-                "communication.to MUST match target with a concrete, in-character message.\n"
+                "Use natural social behavior: move, talk, message, investigate, work, monitor, or rest.\n\n"
+                "Communication modes:\n"
+                "- 'talk': Speak aloud in your current location. Everyone nearby will hear you.\n"
+                "  Use for casual conversation, public statements, or when you want others to overhear.\n"
+                "- 'message': Send a private message to one person. Only they will see it.\n"
+                "  Use for sensitive or private communication regardless of location.\n\n"
+                "For both talk and message, communication.to should be a valid agent_id "
+                "and communication.message must contain what you actually say/write.\n"
+                "For talk, communication.to is who you're addressing (but others nearby also hear).\n"
                 "Do not invent new agent IDs. Do not break character.\n\n"
                 "Available actions:\n{{action_catalog}}"
             ),
@@ -222,26 +228,51 @@ def _build_threshold_prompt_library():
 def _build_threshold_available_actions() -> list[dict]:
     return [
         {
-            "name": "communicate",
+            "name": "talk",
             "schema": {
-                "action_type": "communicate",
+                "action_type": "talk",
+                "target": "<agent_id or null>",
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": {
+                    "to": "<agent_id you're addressing>",
+                    "message": "<what you say aloud>",
+                },
+            },
+            "examples": [
+                {
+                    "action_type": "talk",
+                    "target": "juno",
+                    "parameters": {},
+                    "reasoning": "Chat with Juno at the market — anyone nearby can hear.",
+                    "communication": {
+                        "to": "juno",
+                        "message": "Hey Juno, how's business today? Anything interesting happening around here?",
+                    },
+                }
+            ],
+        },
+        {
+            "name": "message",
+            "schema": {
+                "action_type": "message",
                 "target": "<agent_id>",
                 "parameters": {},
                 "reasoning": "<string>",
                 "communication": {
                     "to": "<agent_id>",
-                    "message": "<string>",
+                    "message": "<private message content>",
                 },
             },
             "examples": [
                 {
-                    "action_type": "communicate",
-                    "target": "juno",
+                    "action_type": "message",
+                    "target": "sera",
                     "parameters": {},
-                    "reasoning": "Check in with Juno at the market.",
+                    "reasoning": "Send a private message to Sera about something sensitive.",
                     "communication": {
-                        "to": "juno",
-                        "message": "Hey Juno, how's business today? Anything interesting happening around here?",
+                        "to": "sera",
+                        "message": "Can we meet at the clinic tonight? There's something I need to discuss privately.",
                     },
                 }
             ],
