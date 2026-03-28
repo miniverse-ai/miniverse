@@ -1057,8 +1057,9 @@ class Orchestrator:
         # Assemble common metadata for all prompt contexts (planning, execution, reflection).
         # This avoids repeating the same data across multiple context builds.
         extra_common = {
-            # First-turn only initial state prompt; otherwise empty
-            "initial_state_agent_prompt": self.agent_prompts.get(agent_id, "") if tick == 1 else "",
+            # Per-agent private context (character voice, hidden knowledge, secret goals).
+            # Injected every tick so agents maintain consistent identity and private state.
+            "initial_state_agent_prompt": self.agent_prompts.get(agent_id, ""),
             # Optional simulation instructions (system-level contract). If empty, template default applies
             "simulation_instructions": self.world_prompt or "",
             "llm_provider": self.llm_provider,
