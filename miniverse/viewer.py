@@ -1568,7 +1568,6 @@ function initNetwork() {{
     canvas.height = wrap.clientHeight * devicePixelRatio;
     canvas.style.width = wrap.clientWidth + 'px';
     canvas.style.height = wrap.clientHeight + 'px';
-    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   }}
   resize();
   window.addEventListener('resize', () => {{ resize(); drawFrame(); }});
@@ -1774,7 +1773,11 @@ function initNetwork() {{
 
   function drawFrame(timestamp) {{
     if (!timestamp) timestamp = performance.now();
+    // Reset transform for clearing, then apply pan/zoom
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     ctx.clearRect(0, 0, W(), H());
+    ctx.setTransform(devicePixelRatio * zoom, 0, 0, devicePixelRatio * zoom,
+                     panX * devicePixelRatio, panY * devicePixelRatio);
 
     // Animate node positions towards targets (smooth drift)
     if (hasLocations) {{
@@ -1791,16 +1794,17 @@ function initNetwork() {{
     // Draw location boxes
     if (hasLocations && locBoxes.length > 0) {{
       locBoxes.forEach(box => {{
-        ctx.strokeStyle = 'rgba(80, 80, 80, 0.4)';
+        // Subtle fill
+        ctx.fillStyle = 'rgba(30, 30, 30, 0.6)';
+        ctx.fillRect(box.x, box.y, box.w, box.h);
+        ctx.strokeStyle = 'rgba(100, 100, 100, 0.5)';
         ctx.lineWidth = 1;
-        ctx.setLineDash([4, 4]);
         ctx.strokeRect(box.x, box.y, box.w, box.h);
-        ctx.setLineDash([]);
-        // Label
-        ctx.font = "500 10px 'IBM Plex Mono', monospace";
-        ctx.fillStyle = 'rgba(140, 140, 140, 0.6)';
+        // Label — high contrast
+        ctx.font = "600 11px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = 'rgba(200, 200, 200, 0.85)';
         ctx.textAlign = 'left';
-        ctx.fillText(box.name.toUpperCase(), box.x + 8, box.y + 14);
+        ctx.fillText(box.name.toUpperCase(), box.x + 8, box.y + 16);
       }});
 
       // Draw adjacency lines between location centers (very faint)
@@ -1853,35 +1857,39 @@ function initNetwork() {{
       const cpx = mx - dy * 0.25;
       const cpy = my + dx * 0.25;
 
+      // Parse color to rgba
+      let cr = 96, cg = 165, cb = 250; // default blue
+      if (arc.color.startsWith('#')) {{
+        cr = parseInt(arc.color.slice(1, 3), 16);
+        cg = parseInt(arc.color.slice(3, 5), 16);
+        cb = parseInt(arc.color.slice(5, 7), 16);
+      }}
+
+      // Dashed arc line — visually distinct from edges
       ctx.beginPath();
       ctx.moveTo(arc.x1, arc.y1);
       ctx.quadraticCurveTo(cpx, cpy, arc.x2, arc.y2);
-      ctx.strokeStyle = arc.color.replace(')', `, ${{opacity}})`).replace('rgb(', 'rgba(');
-      // Handle hex colors
-      if (arc.color.startsWith('#')) {{
-        const r = parseInt(arc.color.slice(1, 3), 16);
-        const g = parseInt(arc.color.slice(3, 5), 16);
-        const b = parseInt(arc.color.slice(5, 7), 16);
-        ctx.strokeStyle = `rgba(${{r}},${{g}},${{b}},${{opacity}})`;
-      }}
-      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = `rgba(${{cr}},${{cg}},${{cb}},${{opacity}})`;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([6, 4]);
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Traveling dot
-      const dt = Math.min(t * 1.5, 1); // dot moves faster
+      // Traveling dot (💬 indicator)
+      const dt = Math.min(t * 1.5, 1);
       const bx = (1-dt)*(1-dt)*arc.x1 + 2*(1-dt)*dt*cpx + dt*dt*arc.x2;
       const by = (1-dt)*(1-dt)*arc.y1 + 2*(1-dt)*dt*cpy + dt*dt*arc.y2;
+      // Draw a small filled circle with a chat icon
       ctx.beginPath();
-      ctx.arc(bx, by, 3, 0, Math.PI * 2);
-      if (arc.color.startsWith('#')) {{
-        const r = parseInt(arc.color.slice(1, 3), 16);
-        const g = parseInt(arc.color.slice(3, 5), 16);
-        const b = parseInt(arc.color.slice(5, 7), 16);
-        ctx.fillStyle = `rgba(${{r}},${{g}},${{b}},${{Math.min(opacity * 1.5, 1)}})`;
-      }} else {{
-        ctx.fillStyle = arc.color;
-      }}
+      ctx.arc(bx, by, 5, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(${{cr}},${{cg}},${{cb}},${{Math.min(opacity * 1.5, 1)}})`;
       ctx.fill();
+      // Small ring around the dot to make comms distinctive
+      ctx.beginPath();
+      ctx.arc(bx, by, 8, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${{cr}},${{cg}},${{cb}},${{opacity * 0.5}})`;
+      ctx.lineWidth = 1;
+      ctx.stroke();
       return true;
     }});
 
@@ -2068,20 +2076,46 @@ function initNetwork() {{
     return null;
   }}
 
+  // Pan/zoom state
+  let panX = 0, panY = 0, zoom = 1;
+  let isPanning = false, panStartX = 0, panStartY = 0;
+
+  function toWorld(mx, my) {{
+    return {{ x: (mx - panX) / zoom, y: (my - panY) / zoom }};
+  }}
+
   canvas.addEventListener('mousedown', (e) => {{
     const rect = canvas.getBoundingClientRect();
-    dragNode = getNode(e.clientX - rect.left, e.clientY - rect.top);
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const wp = toWorld(mx, my);
+    const node = getNode(wp.x, wp.y);
+    if (node && !hasLocations) {{
+      // Allow dragging only in force-directed mode
+      dragNode = node;
+    }} else {{
+      // Pan the canvas
+      isPanning = true;
+      panStartX = mx - panX;
+      panStartY = my - panY;
+      canvas.style.cursor = 'grabbing';
+    }}
   }});
   canvas.addEventListener('mousemove', (e) => {{
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    if (dragNode) {{
-      dragNode.x = mx; dragNode.y = my;
-      dragNode.targetX = mx; dragNode.targetY = my;
+    if (isPanning) {{
+      panX = mx - panStartX;
+      panY = my - panStartY;
+      ensureAnimating();
+    }} else if (dragNode) {{
+      const wp = toWorld(mx, my);
+      dragNode.x = wp.x; dragNode.y = wp.y;
+      dragNode.targetX = wp.x; dragNode.targetY = wp.y;
       ensureAnimating();
     }} else {{
+      const wp = toWorld(mx, my);
       const prev = hoverNode;
-      hoverNode = getNode(mx, my);
+      hoverNode = getNode(wp.x, wp.y);
       if (hoverNode !== prev) ensureAnimating();
       if (hoverNode) {{
         const loc = agentLocation[hoverNode.id] || 'unknown';
@@ -2097,13 +2131,33 @@ function initNetwork() {{
       }}
     }}
   }});
-  canvas.addEventListener('mouseup', () => {{ dragNode = null; }});
+  canvas.addEventListener('mouseup', () => {{
+    dragNode = null;
+    isPanning = false;
+    canvas.style.cursor = '';
+  }});
   canvas.addEventListener('mouseleave', () => {{
     dragNode = null;
+    isPanning = false;
     hoverNode = null;
     tooltip.style.display = 'none';
+    canvas.style.cursor = '';
     ensureAnimating();
   }});
+
+  // Zoom with scroll wheel
+  canvas.addEventListener('wheel', (e) => {{
+    e.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    const oldZoom = zoom;
+    const delta = e.deltaY > 0 ? 0.9 : 1.1;
+    zoom = Math.max(0.3, Math.min(4, zoom * delta));
+    // Zoom toward cursor position
+    panX = mx - (mx - panX) * (zoom / oldZoom);
+    panY = my - (my - panY) * (zoom / oldZoom);
+    ensureAnimating();
+  }}, {{ passive: false }});
 
   // ─── Agent toggle visibility also affects network ───────────────────
   checkboxes.forEach(cb => cb.addEventListener('change', () => {{ ensureAnimating(); }}));
