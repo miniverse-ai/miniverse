@@ -591,6 +591,12 @@ def _build_left_sidebar(sim: SimulationData) -> str:
     return "".join(parts)
 
 
+_AGENT_COLORS = [
+    "#4ade80", "#60a5fa", "#c084fc", "#fbbf24",
+    "#22d3ee", "#f87171", "#fb923c", "#a78bfa", "#34d399",
+]
+
+
 def render_html(sim: SimulationData) -> str:
     """Render parsed simulation data as a self-contained HTML file."""
     panels_html = _build_agent_panels(sim)
@@ -612,9 +618,37 @@ def render_html(sim: SimulationData) -> str:
         f"<div class='hdr-controls'>"
         f"<label class='toggle comms-toggle'>"
         f"<input type='checkbox' id='comms-only'> comms only</label>"
+        f"<label class='toggle network-toggle'>"
+        f"<input type='checkbox' id='network-view'> network</label>"
         f"</div>"
         f"<div class='hdr-toggles'>{''.join(toggles)}</div>"
     )
+
+    # Serialize graph data for the network view
+    agents_data = []
+    color_map = {}
+    for idx, agent_id in enumerate(sim.agent_order):
+        agent = sim.agents[agent_id]
+        color = _AGENT_COLORS[idx % len(_AGENT_COLORS)]
+        color_map[agent_id] = color
+        agents_data.append({
+            "id": agent_id,
+            "name": agent.full_name.split()[0],  # first name only
+            "fullName": agent.full_name,
+            "role": agent.role,
+            "color": color,
+        })
+
+    comms_data = []
+    for c in sim.communications:
+        comms_data.append({
+            "tick": c.tick,
+            "from": c.sender_id,
+            "to": c.recipient_id,
+            "msg": c.message[:120],
+        })
+
+    max_tick = max((c.tick for c in sim.communications), default=1)
 
     return _TEMPLATE.format(
         title=_escape(sim.title),
@@ -623,6 +657,9 @@ def render_html(sim: SimulationData) -> str:
         coordination=coord_html,
         panels=panels_html,
         agent_ids_json=json.dumps(sim.agent_order),
+        agents_data_json=json.dumps(agents_data),
+        comms_data_json=json.dumps(comms_data),
+        max_tick=max_tick,
     )
 
 
@@ -778,6 +815,93 @@ code {{
   background: var(--green-bg);
   border-color: var(--green);
   color: var(--green);
+}}
+.network-toggle {{
+  background: var(--bg-3);
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}}
+.network-toggle:has(input:checked) {{
+  background: var(--blue-bg);
+  border-color: var(--blue);
+  color: var(--blue);
+}}
+
+/* ─── NETWORK VIEW ─── */
+.network-container {{
+  display: none;
+  flex: 1;
+  flex-direction: column;
+  background: var(--bg);
+  position: relative;
+}}
+.network-container.active {{
+  display: flex;
+}}
+.network-canvas-wrap {{
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}}
+.network-canvas-wrap canvas {{
+  display: block;
+  width: 100%;
+  height: 100%;
+}}
+.network-slider-bar {{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: var(--bg-1);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}}
+.network-slider-bar label {{
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}}
+.network-slider-bar input[type=range] {{
+  flex: 1;
+  accent-color: var(--blue);
+  cursor: pointer;
+}}
+.network-slider-bar .tick-val {{
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-bright);
+  min-width: 50px;
+  text-align: right;
+}}
+.network-tooltip {{
+  display: none;
+  position: absolute;
+  background: var(--bg-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  pointer-events: none;
+  z-index: 100;
+  max-width: 240px;
+  line-height: 1.6;
+}}
+.network-tooltip .tt-name {{
+  font-weight: 600;
+  color: var(--text-bright);
+  font-size: 12px;
+}}
+.network-tooltip .tt-role {{
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}}
+.network-tooltip .tt-stat {{
+  color: var(--text-dim);
 }}
 
 /* ─── MAIN LAYOUT ─── */
@@ -1208,12 +1332,29 @@ body.comms-only .tick-marker.has-comm {{ display: block; }}
 <div class="grid" id="grid">
 {panels}
 </div>
+<div class="network-container" id="network-container">
+  <div class="network-canvas-wrap">
+    <canvas id="network-canvas"></canvas>
+    <div class="network-tooltip" id="network-tooltip"></div>
+  </div>
+  <div class="network-slider-bar">
+    <label>Tick</label>
+    <input type="range" id="tick-slider" min="1" max="{max_tick}" value="{max_tick}">
+    <span class="tick-val" id="tick-val">Tick {max_tick}</span>
+  </div>
+</div>
 </div>
 <script>
 const agentIds = {agent_ids_json};
+const agentsData = {agents_data_json};
+const commsData = {comms_data_json};
+const maxTick = {max_tick};
 const panels = document.querySelectorAll('.panel');
 const checkboxes = document.querySelectorAll('.toggle input[data-agent]');
 const commsOnly = document.getElementById('comms-only');
+const networkToggle = document.getElementById('network-view');
+const gridEl = document.getElementById('grid');
+const networkEl = document.getElementById('network-container');
 
 function updateGrid() {{
   panels.forEach(p => {{
@@ -1222,28 +1363,25 @@ function updateGrid() {{
     p.classList.toggle('active', cb && cb.checked);
   }});
   const visible = document.querySelectorAll('.panel.active').length;
-  const grid = document.getElementById('grid');
   if (visible <= 1) {{
-    grid.style.gridTemplateColumns = '1fr';
+    gridEl.style.gridTemplateColumns = '1fr';
   }} else if (visible <= 2) {{
-    grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    gridEl.style.gridTemplateColumns = 'repeat(2, 1fr)';
   }} else if (visible <= 4) {{
-    grid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+    gridEl.style.gridTemplateColumns = 'repeat(2, 1fr)';
   }} else if (visible <= 6) {{
-    grid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+    gridEl.style.gridTemplateColumns = 'repeat(3, 1fr)';
   }} else {{
-    grid.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))';
+    gridEl.style.gridTemplateColumns = 'repeat(auto-fit, minmax(300px, 1fr))';
   }}
 }}
 
 checkboxes.forEach(cb => cb.addEventListener('change', updateGrid));
 
-// Communications-only toggle
 commsOnly.addEventListener('change', () => {{
   document.body.classList.toggle('comms-only', commsOnly.checked);
 }});
 
-// Click-to-expand on clipped elements
 document.addEventListener('click', (e) => {{
   const clipped = e.target.closest('.comm-clipped, .refl-clipped, .meta-clipped');
   if (clipped) {{
@@ -1254,6 +1392,228 @@ document.addEventListener('click', (e) => {{
 }});
 
 updateGrid();
+
+// ─── NETWORK VIEW ───────────────────────────────────────────────────
+networkToggle.addEventListener('change', () => {{
+  const on = networkToggle.checked;
+  gridEl.style.display = on ? 'none' : '';
+  networkEl.classList.toggle('active', on);
+  if (on) initNetwork();
+}});
+
+let netInitialized = false;
+let nodes = [];
+let edges = [];
+let currentMaxTick = maxTick;
+let dragNode = null;
+let hoverNode = null;
+let animId = null;
+
+function initNetwork() {{
+  if (netInitialized) {{ drawNetwork(); return; }}
+  netInitialized = true;
+
+  const canvas = document.getElementById('network-canvas');
+  const wrap = canvas.parentElement;
+  const ctx = canvas.getContext('2d');
+  const tooltip = document.getElementById('network-tooltip');
+  const slider = document.getElementById('tick-slider');
+  const tickVal = document.getElementById('tick-val');
+
+  function resize() {{
+    canvas.width = wrap.clientWidth * devicePixelRatio;
+    canvas.height = wrap.clientHeight * devicePixelRatio;
+    canvas.style.width = wrap.clientWidth + 'px';
+    canvas.style.height = wrap.clientHeight + 'px';
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  }}
+  resize();
+  window.addEventListener('resize', () => {{ resize(); drawNetwork(); }});
+
+  const W = () => wrap.clientWidth;
+  const H = () => wrap.clientHeight;
+
+  // Build nodes with initial positions in a circle
+  const cx = W() / 2, cy = H() / 2;
+  nodes = agentsData.map((a, i) => {{
+    const angle = (2 * Math.PI * i) / agentsData.length - Math.PI / 2;
+    const r = Math.min(W(), H()) * 0.3;
+    return {{
+      id: a.id, name: a.name, fullName: a.fullName, role: a.role,
+      color: a.color,
+      x: cx + r * Math.cos(angle),
+      y: cy + r * Math.sin(angle),
+      vx: 0, vy: 0,
+      sent: 0, recv: 0,
+    }};
+  }});
+  const nodeMap = {{}};
+  nodes.forEach(n => nodeMap[n.id] = n);
+
+  function computeEdges(maxT) {{
+    const edgeMap = {{}};
+    nodes.forEach(n => {{ n.sent = 0; n.recv = 0; }});
+    commsData.forEach(c => {{
+      if (c.tick > maxT) return;
+      const a = c.from < c.to ? c.from : c.to;
+      const b = c.from < c.to ? c.to : c.from;
+      const key = a + '|' + b;
+      if (!edgeMap[key]) edgeMap[key] = {{ a, b, count: 0 }};
+      edgeMap[key].count++;
+      if (nodeMap[c.from]) nodeMap[c.from].sent++;
+      if (nodeMap[c.to]) nodeMap[c.to].recv++;
+    }});
+    return Object.values(edgeMap);
+  }}
+
+  edges = computeEdges(currentMaxTick);
+
+  // Force simulation
+  function simulate(iterations) {{
+    for (let iter = 0; iter < iterations; iter++) {{
+      // Repulsion
+      for (let i = 0; i < nodes.length; i++) {{
+        for (let j = i + 1; j < nodes.length; j++) {{
+          let dx = nodes[j].x - nodes[i].x;
+          let dy = nodes[j].y - nodes[i].y;
+          let d2 = dx * dx + dy * dy;
+          if (d2 < 1) d2 = 1;
+          const f = 600 / d2;
+          const fx = f * dx / Math.sqrt(d2);
+          const fy = f * dy / Math.sqrt(d2);
+          nodes[i].vx -= fx; nodes[i].vy -= fy;
+          nodes[j].vx += fx; nodes[j].vy += fy;
+        }}
+      }}
+      // Springs
+      edges.forEach(e => {{
+        const na = nodeMap[e.a], nb = nodeMap[e.b];
+        if (!na || !nb) return;
+        const dx = nb.x - na.x, dy = nb.y - na.y;
+        const d = Math.sqrt(dx * dx + dy * dy) || 1;
+        const f = 0.012 * (d - 140);
+        const fx = f * dx / d, fy = f * dy / d;
+        na.vx += fx; na.vy += fy;
+        nb.vx -= fx; nb.vy -= fy;
+      }});
+      // Center gravity
+      nodes.forEach(n => {{
+        n.vx += (W() / 2 - n.x) * 0.008;
+        n.vy += (H() / 2 - n.y) * 0.008;
+      }});
+      // Integrate + dampen
+      nodes.forEach(n => {{
+        if (n === dragNode) return;
+        n.vx *= 0.82; n.vy *= 0.82;
+        n.x += n.vx; n.y += n.vy;
+        n.x = Math.max(30, Math.min(W() - 30, n.x));
+        n.y = Math.max(30, Math.min(H() - 30, n.y));
+      }});
+    }}
+  }}
+
+  simulate(300);
+
+  function drawNetwork() {{
+    ctx.clearRect(0, 0, W(), H());
+    const maxCount = Math.max(1, ...edges.map(e => e.count));
+
+    // Edges
+    edges.forEach(e => {{
+      const na = nodeMap[e.a], nb = nodeMap[e.b];
+      if (!na || !nb) return;
+      const isHover = hoverNode && (hoverNode.id === e.a || hoverNode.id === e.b);
+      const alpha = hoverNode ? (isHover ? 0.7 : 0.08) : 0.35;
+      ctx.beginPath();
+      ctx.moveTo(na.x, na.y);
+      ctx.lineTo(nb.x, nb.y);
+      ctx.strokeStyle = isHover ? na.color : `rgba(100,100,100,${{alpha}})`;
+      ctx.lineWidth = 1 + (e.count / maxCount) * 5;
+      ctx.stroke();
+    }});
+
+    // Nodes
+    const maxTotal = Math.max(1, ...nodes.map(n => n.sent + n.recv));
+    nodes.forEach(n => {{
+      const total = n.sent + n.recv;
+      const radius = 8 + (total / maxTotal) * 16;
+      const isHover = hoverNode === n;
+      const isDim = hoverNode && !isHover &&
+        !edges.some(e => (e.a === hoverNode.id || e.b === hoverNode.id) &&
+                         (e.a === n.id || e.b === n.id));
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
+      ctx.fillStyle = isDim ? 'rgba(60,60,60,0.5)' : n.color;
+      ctx.fill();
+      if (isHover) {{
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }}
+      // Label
+      ctx.font = `${{isHover ? '600' : '500'}} 11px 'IBM Plex Sans', sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.fillStyle = isDim ? 'rgba(100,100,100,0.5)' : '#e0e0e0';
+      ctx.fillText(n.name, n.x, n.y + radius + 14);
+    }});
+  }}
+
+  window.drawNetwork = drawNetwork;
+  drawNetwork();
+
+  // Interaction
+  function getNode(mx, my) {{
+    const maxTotal = Math.max(1, ...nodes.map(n => n.sent + n.recv));
+    for (let i = nodes.length - 1; i >= 0; i--) {{
+      const n = nodes[i];
+      const r = 8 + ((n.sent + n.recv) / maxTotal) * 16;
+      if ((mx - n.x) ** 2 + (my - n.y) ** 2 < (r + 4) ** 2) return n;
+    }}
+    return null;
+  }}
+
+  canvas.addEventListener('mousedown', (e) => {{
+    const rect = canvas.getBoundingClientRect();
+    dragNode = getNode(e.clientX - rect.left, e.clientY - rect.top);
+  }});
+  canvas.addEventListener('mousemove', (e) => {{
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    if (dragNode) {{
+      dragNode.x = mx; dragNode.y = my;
+      drawNetwork();
+    }} else {{
+      const prev = hoverNode;
+      hoverNode = getNode(mx, my);
+      if (hoverNode !== prev) drawNetwork();
+      if (hoverNode) {{
+        tooltip.style.display = 'block';
+        tooltip.innerHTML = `<div class="tt-name">${{hoverNode.fullName}}</div>` +
+          `<div class="tt-role">${{hoverNode.role}}</div>` +
+          `<div class="tt-stat">Sent: ${{hoverNode.sent}} &middot; Received: ${{hoverNode.recv}}</div>`;
+        tooltip.style.left = (mx + 16) + 'px';
+        tooltip.style.top = (my - 10) + 'px';
+      }} else {{
+        tooltip.style.display = 'none';
+      }}
+    }}
+  }});
+  canvas.addEventListener('mouseup', () => {{ dragNode = null; }});
+  canvas.addEventListener('mouseleave', () => {{
+    dragNode = null;
+    hoverNode = null;
+    tooltip.style.display = 'none';
+    drawNetwork();
+  }});
+
+  // Tick slider
+  slider.addEventListener('input', () => {{
+    currentMaxTick = parseInt(slider.value);
+    tickVal.textContent = 'Tick ' + currentMaxTick;
+    edges = computeEdges(currentMaxTick);
+    drawNetwork();
+  }});
+}}
 </script>
 </body>
 </html>
