@@ -21,6 +21,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
+
 # ── ANSI stripping ──────────────────────────────────────────────────────────
 
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -100,6 +105,7 @@ class SimulationData:
     communications: list[Communication] = field(default_factory=list)
     reflections: list[Reflection] = field(default_factory=list)
     tick_summaries: list[TickSummary] = field(default_factory=list)
+    scenario_path: str = ""
 
 
 # ── Parser ──────────────────────────────────────────────────────────────────
@@ -124,7 +130,9 @@ def _parse_log(log_path: Path) -> SimulationData:
         stripped = line.strip()
 
         # ── Run Setup metadata ──
-        if stripped.startswith("- Title:"):
+        if stripped.startswith("- Scenario file:"):
+            sim.scenario_path = stripped.removeprefix("- Scenario file:").strip()
+        elif stripped.startswith("- Title:"):
             sim.title = stripped.removeprefix("- Title:").strip()
         elif stripped.startswith("- Description:"):
             desc = stripped.removeprefix("- Description:").strip()
@@ -597,8 +605,20 @@ _AGENT_COLORS = [
 ]
 
 
-def render_html(sim: SimulationData) -> str:
-    """Render parsed simulation data as a self-contained HTML file."""
+def render_html(
+    sim: SimulationData,
+    locations: list[dict] | None = None,
+    starting_locations: dict[str, str] | None = None,
+    adjacency: dict[str, list[str]] | None = None,
+) -> str:
+    """Render parsed simulation data as a self-contained HTML file.
+
+    Args:
+        sim: Parsed simulation data.
+        locations: List of dicts with 'id' and 'name' keys for environment locations.
+        starting_locations: Map of agent_id -> location_id at tick 0.
+        adjacency: Map of location_id -> list of adjacent location_ids.
+    """
     panels_html = _build_agent_panels(sim)
     coord_html = _build_communications_sidebar(sim)
     left_html = _build_left_sidebar(sim)
@@ -648,7 +668,23 @@ def render_html(sim: SimulationData) -> str:
             "msg": c.message[:120],
         })
 
-    max_tick = max((c.tick for c in sim.communications), default=1)
+    # Build actions data for the network animation
+    actions_data = []
+    for a in sim.actions:
+        actions_data.append({
+            "tick": a.tick,
+            "agent": a.agent_id,
+            "type": a.action_type,
+            "target": a.target,
+            "commTo": a.comm_to,
+        })
+
+    max_tick = max(
+        max((c.tick for c in sim.communications), default=1),
+        max((a.tick for a in sim.actions), default=1),
+    )
+
+    has_locations = bool(locations)
 
     return _TEMPLATE.format(
         title=_escape(sim.title),
@@ -659,11 +695,61 @@ def render_html(sim: SimulationData) -> str:
         agent_ids_json=json.dumps(sim.agent_order),
         agents_data_json=json.dumps(agents_data),
         comms_data_json=json.dumps(comms_data),
+        actions_data_json=json.dumps(actions_data),
+        locations_json=json.dumps(locations or []),
+        starting_locations_json=json.dumps(starting_locations or {}),
+        adjacency_json=json.dumps(adjacency or {}),
+        has_locations_json=json.dumps(has_locations),
         max_tick=max_tick,
     )
 
 
 # ── Main entry point ────────────────────────────────────────────────────────
+
+
+def _load_scenario_locations(scenario_path: str) -> tuple[
+    list[dict] | None,
+    dict[str, str] | None,
+    dict[str, list[str]] | None,
+]:
+    """Try to load location data from a scenario YAML file.
+
+    Returns (locations, starting_locations, adjacency) or (None, None, None).
+    """
+    if not scenario_path or _yaml is None:
+        return None, None, None
+
+    path = Path(scenario_path)
+    if not path.exists():
+        return None, None, None
+
+    try:
+        data = _yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None, None, None
+
+    env_graph = data.get("environment_graph")
+    if not env_graph or not env_graph.get("nodes"):
+        return None, None, None
+
+    locations = []
+    for loc_id, loc_data in env_graph["nodes"].items():
+        locations.append({
+            "id": loc_id,
+            "name": loc_data.get("name", loc_id),
+        })
+
+    adjacency = env_graph.get("adjacency", {})
+
+    starting_locations: dict[str, str] = {}
+    for agent_block in data.get("agents", []):
+        status = agent_block.get("status", {})
+        aid = status.get("agent_id")
+        loc = status.get("location")
+        if aid and loc:
+            starting_locations[aid] = loc
+
+    return locations, starting_locations, adjacency
 
 
 def render_log(log_path: str | Path, output_path: str | Path | None = None) -> Path:
@@ -683,12 +769,33 @@ def render_log(log_path: str | Path, output_path: str | Path | None = None) -> P
 
     sim = _parse_log(log_path)
 
+    # Try to load location data from the scenario YAML
+    locations, starting_locations, adjacency = _load_scenario_locations(
+        sim.scenario_path
+    )
+
+    # Fallback: extract locations from move_to action targets if no YAML
+    if locations is None:
+        loc_ids: set[str] = set()
+        for a in sim.actions:
+            if a.action_type == "move_to" and a.target:
+                loc_ids.add(a.target)
+        if loc_ids:
+            locations = [{"id": lid, "name": lid.replace("_", " ").title()} for lid in sorted(loc_ids)]
+            adjacency = {}
+            starting_locations = {}
+
     if output_path is None:
         output_path = log_path.with_suffix(".html")
     else:
         output_path = Path(output_path)
 
-    html_content = render_html(sim)
+    html_content = render_html(
+        sim,
+        locations=locations,
+        starting_locations=starting_locations,
+        adjacency=adjacency,
+    )
     output_path.write_text(html_content, encoding="utf-8")
     return output_path
 
@@ -849,33 +956,51 @@ code {{
   width: 100%;
   height: 100%;
 }}
-.network-slider-bar {{
+
+/* ─── PLAYBACK CONTROLS ─── */
+.playback-bar {{
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 8px 16px;
   background: var(--bg-1);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
 }}
-.network-slider-bar label {{
+.playback-bar button {{
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  color: var(--text);
   font-family: var(--mono);
-  font-size: 11px;
-  color: var(--text-dim);
-  white-space: nowrap;
+  font-size: 13px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  min-width: 36px;
 }}
-.network-slider-bar input[type=range] {{
+.playback-bar button:hover {{ background: var(--border); }}
+.playback-bar button.active {{ background: var(--blue-bg); border-color: var(--blue); color: var(--blue); }}
+.playback-bar input[type=range] {{
   flex: 1;
   accent-color: var(--blue);
   cursor: pointer;
 }}
-.network-slider-bar .tick-val {{
+.playback-bar .tick-val {{
   font-family: var(--mono);
   font-size: 12px;
   color: var(--text-bright);
-  min-width: 50px;
-  text-align: right;
+  min-width: 70px;
+  text-align: center;
 }}
+.speed-group {{
+  display: flex;
+  gap: 4px;
+}}
+.speed-group button {{
+  font-size: 10px;
+  padding: 3px 8px;
+}}
+
 .network-tooltip {{
   display: none;
   position: absolute;
@@ -1337,10 +1462,15 @@ body.comms-only .tick-marker.has-comm {{ display: block; }}
     <canvas id="network-canvas"></canvas>
     <div class="network-tooltip" id="network-tooltip"></div>
   </div>
-  <div class="network-slider-bar">
-    <label>Tick</label>
-    <input type="range" id="tick-slider" min="1" max="{max_tick}" value="{max_tick}">
-    <span class="tick-val" id="tick-val">Tick {max_tick}</span>
+  <div class="playback-bar">
+    <button id="play-btn" title="Play/Pause">&#9654;</button>
+    <input type="range" id="tick-slider" min="1" max="{max_tick}" value="1">
+    <span class="tick-val" id="tick-val">Tick 1 / {max_tick}</span>
+    <div class="speed-group">
+      <button class="speed-btn active" data-speed="1">1x</button>
+      <button class="speed-btn" data-speed="2">2x</button>
+      <button class="speed-btn" data-speed="4">4x</button>
+    </div>
   </div>
 </div>
 </div>
@@ -1348,6 +1478,11 @@ body.comms-only .tick-marker.has-comm {{ display: block; }}
 const agentIds = {agent_ids_json};
 const agentsData = {agents_data_json};
 const commsData = {comms_data_json};
+const actionsData = {actions_data_json};
+const locationsData = {locations_json};
+const startingLocations = {starting_locations_json};
+const adjacencyData = {adjacency_json};
+const hasLocations = {has_locations_json};
 const maxTick = {max_tick};
 const panels = document.querySelectorAll('.panel');
 const checkboxes = document.querySelectorAll('.toggle input[data-agent]');
@@ -1404,13 +1539,20 @@ networkToggle.addEventListener('change', () => {{
 let netInitialized = false;
 let nodes = [];
 let edges = [];
-let currentMaxTick = maxTick;
+let currentTick = 1;
 let dragNode = null;
 let hoverNode = null;
 let animId = null;
 
+// ─── Playback state ─────────────────────────────────────────────────
+let playing = false;
+let playSpeed = 1;
+let playTimer = null;
+let activeArcs = [];
+let tickPhase = 0; // 0=start, 1=moves done, 2=comms done
+
 function initNetwork() {{
-  if (netInitialized) {{ drawNetwork(); return; }}
+  if (netInitialized) {{ drawFrame(); return; }}
   netInitialized = true;
 
   const canvas = document.getElementById('network-canvas');
@@ -1419,6 +1561,7 @@ function initNetwork() {{
   const tooltip = document.getElementById('network-tooltip');
   const slider = document.getElementById('tick-slider');
   const tickVal = document.getElementById('tick-val');
+  const playBtn = document.getElementById('play-btn');
 
   function resize() {{
     canvas.width = wrap.clientWidth * devicePixelRatio;
@@ -1428,13 +1571,48 @@ function initNetwork() {{
     ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
   }}
   resize();
-  window.addEventListener('resize', () => {{ resize(); drawNetwork(); }});
+  window.addEventListener('resize', () => {{ resize(); drawFrame(); }});
 
   const W = () => wrap.clientWidth;
   const H = () => wrap.clientHeight;
 
-  // Build nodes with initial positions in a circle
+  // ─── Location regions ───────────────────────────────────────────────
+  // Build location box positions in a 2x3 or 3x2 grid
+  const locMap = {{}};
+  let locBoxes = [];
+
+  function buildLocationBoxes() {{
+    locBoxes = [];
+    if (!hasLocations || locationsData.length === 0) return;
+    const pad = 20;
+    const w = W() - pad * 2;
+    const h = H() - pad * 2;
+    const cols = locationsData.length <= 4 ? 2 : 3;
+    const rows = Math.ceil(locationsData.length / cols);
+    const boxW = (w - (cols - 1) * 12) / cols;
+    const boxH = (h - (rows - 1) * 12) / rows;
+    locationsData.forEach((loc, i) => {{
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      const bx = pad + col * (boxW + 12);
+      const by = pad + row * (boxH + 12);
+      const box = {{ id: loc.id, name: loc.name, x: bx, y: by, w: boxW, h: boxH,
+                     cx: bx + boxW / 2, cy: by + boxH / 2 }};
+      locBoxes.push(box);
+      locMap[loc.id] = box;
+    }});
+  }}
+
+  buildLocationBoxes();
+  window.addEventListener('resize', () => {{ buildLocationBoxes(); positionNodesInLocations(); }});
+
+  // ─── Build nodes ────────────────────────────────────────────────────
   const cx = W() / 2, cy = H() / 2;
+  // Track current location per agent
+  const agentLocation = {{}};
+  // Copy starting locations
+  Object.keys(startingLocations).forEach(aid => {{ agentLocation[aid] = startingLocations[aid]; }});
+
   nodes = agentsData.map((a, i) => {{
     const angle = (2 * Math.PI * i) / agentsData.length - Math.PI / 2;
     const r = Math.min(W(), H()) * 0.3;
@@ -1443,16 +1621,81 @@ function initNetwork() {{
       color: a.color,
       x: cx + r * Math.cos(angle),
       y: cy + r * Math.sin(angle),
+      targetX: 0, targetY: 0,
       vx: 0, vy: 0,
       sent: 0, recv: 0,
+      lastAction: '',
+      dimmed: false,
     }};
   }});
   const nodeMap = {{}};
   nodes.forEach(n => nodeMap[n.id] = n);
 
+  // Assign positions within location boxes, avoiding overlap
+  function positionNodesInLocations() {{
+    if (!hasLocations || locBoxes.length === 0) return;
+    // Group nodes by location
+    const groups = {{}};
+    nodes.forEach(n => {{
+      const loc = agentLocation[n.id] || '';
+      if (!groups[loc]) groups[loc] = [];
+      groups[loc].push(n);
+    }});
+    Object.keys(groups).forEach(locId => {{
+      const box = locMap[locId];
+      if (!box) return;
+      const members = groups[locId];
+      const cols = Math.ceil(Math.sqrt(members.length));
+      const rows = Math.ceil(members.length / cols);
+      const spacingX = box.w / (cols + 1);
+      const spacingY = (box.h - 24) / (rows + 1); // 24 for label
+      members.forEach((n, i) => {{
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        n.x = box.x + spacingX * (col + 1);
+        n.y = box.y + 24 + spacingY * (row + 1);
+        n.targetX = n.x;
+        n.targetY = n.y;
+      }});
+    }});
+  }}
+
+  // ─── Build per-tick action index ──────────────────────────────────
+  const tickActions = {{}};
+  actionsData.forEach(a => {{
+    if (!tickActions[a.tick]) tickActions[a.tick] = [];
+    tickActions[a.tick].push(a);
+  }});
+
+  // Apply actions up to a given tick (for scrubbing)
+  function applyStateTo(tick) {{
+    // Reset locations to starting
+    Object.keys(startingLocations).forEach(aid => {{ agentLocation[aid] = startingLocations[aid]; }});
+    nodes.forEach(n => {{ n.sent = 0; n.recv = 0; n.lastAction = ''; n.dimmed = false; }});
+
+    for (let t = 1; t <= tick; t++) {{
+      const acts = tickActions[t] || [];
+      acts.forEach(a => {{
+        if (a.type === 'move_to' && a.target) {{
+          agentLocation[a.agent] = a.target;
+        }}
+        if (a.type === 'communicate') {{
+          if (nodeMap[a.agent]) nodeMap[a.agent].sent++;
+          const recip = a.commTo || a.target;
+          if (nodeMap[recip]) nodeMap[recip].recv++;
+        }}
+        if (nodeMap[a.agent]) nodeMap[a.agent].lastAction = a.type;
+      }});
+    }}
+
+    // Mark resting agents as dimmed
+    nodes.forEach(n => {{
+      n.dimmed = (n.lastAction === 'rest');
+    }});
+  }}
+
   function computeEdges(maxT) {{
     const edgeMap = {{}};
-    nodes.forEach(n => {{ n.sent = 0; n.recv = 0; }});
     commsData.forEach(c => {{
       if (c.tick > maxT) return;
       const a = c.from < c.to ? c.from : c.to;
@@ -1460,18 +1703,14 @@ function initNetwork() {{
       const key = a + '|' + b;
       if (!edgeMap[key]) edgeMap[key] = {{ a, b, count: 0 }};
       edgeMap[key].count++;
-      if (nodeMap[c.from]) nodeMap[c.from].sent++;
-      if (nodeMap[c.to]) nodeMap[c.to].recv++;
     }});
     return Object.values(edgeMap);
   }}
 
-  edges = computeEdges(currentMaxTick);
-
-  // Force simulation
-  function simulate(iterations) {{
-    for (let iter = 0; iter < iterations; iter++) {{
-      // Repulsion
+  // ─── Force-directed layout (fallback for no locations) ─────────────
+  function runForceLayout() {{
+    edges = computeEdges(maxTick);
+    for (let iter = 0; iter < 300; iter++) {{
       for (let i = 0; i < nodes.length; i++) {{
         for (let j = i + 1; j < nodes.length; j++) {{
           let dx = nodes[j].x - nodes[i].x;
@@ -1485,7 +1724,6 @@ function initNetwork() {{
           nodes[j].vx += fx; nodes[j].vy += fy;
         }}
       }}
-      // Springs
       edges.forEach(e => {{
         const na = nodeMap[e.a], nb = nodeMap[e.b];
         if (!na || !nb) return;
@@ -1496,14 +1734,9 @@ function initNetwork() {{
         na.vx += fx; na.vy += fy;
         nb.vx -= fx; nb.vy -= fy;
       }});
-      // Center gravity
       nodes.forEach(n => {{
         n.vx += (W() / 2 - n.x) * 0.008;
         n.vy += (H() / 2 - n.y) * 0.008;
-      }});
-      // Integrate + dampen
-      nodes.forEach(n => {{
-        if (n === dragNode) return;
         n.vx *= 0.82; n.vy *= 0.82;
         n.x += n.vx; n.y += n.vy;
         n.x = Math.max(30, Math.min(W() - 30, n.x));
@@ -1512,61 +1745,324 @@ function initNetwork() {{
     }}
   }}
 
-  simulate(300);
+  // ─── Initialize ─────────────────────────────────────────────────────
+  if (hasLocations && locBoxes.length > 0) {{
+    applyStateTo(1);
+    positionNodesInLocations();
+    edges = computeEdges(1);
+  }} else {{
+    runForceLayout();
+  }}
 
-  function drawNetwork() {{
+  // ─── Communication arcs ─────────────────────────────────────────────
+  function spawnArc(fromId, toId, color) {{
+    const from = nodeMap[fromId];
+    const to = nodeMap[toId];
+    if (!from || !to) return;
+    activeArcs.push({{
+      x1: from.x, y1: from.y,
+      x2: to.x, y2: to.y,
+      color: color || from.color,
+      startTime: performance.now(),
+      duration: 1500,
+    }});
+  }}
+
+  // ─── Drawing ────────────────────────────────────────────────────────
+  let lastFrameTime = 0;
+  let animating = false;
+
+  function drawFrame(timestamp) {{
+    if (!timestamp) timestamp = performance.now();
     ctx.clearRect(0, 0, W(), H());
-    const maxCount = Math.max(1, ...edges.map(e => e.count));
 
-    // Edges
+    // Animate node positions towards targets (smooth drift)
+    if (hasLocations) {{
+      nodes.forEach(n => {{
+        const dx = n.targetX - n.x;
+        const dy = n.targetY - n.y;
+        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {{
+          n.x += dx * 0.08;
+          n.y += dy * 0.08;
+        }}
+      }});
+    }}
+
+    // Draw location boxes
+    if (hasLocations && locBoxes.length > 0) {{
+      locBoxes.forEach(box => {{
+        ctx.strokeStyle = 'rgba(80, 80, 80, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(box.x, box.y, box.w, box.h);
+        ctx.setLineDash([]);
+        // Label
+        ctx.font = "500 10px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = 'rgba(140, 140, 140, 0.6)';
+        ctx.textAlign = 'left';
+        ctx.fillText(box.name.toUpperCase(), box.x + 8, box.y + 14);
+      }});
+
+      // Draw adjacency lines between location centers (very faint)
+      ctx.strokeStyle = 'rgba(60, 60, 60, 0.2)';
+      ctx.lineWidth = 1;
+      Object.keys(adjacencyData).forEach(locId => {{
+        const from = locMap[locId];
+        if (!from) return;
+        (adjacencyData[locId] || []).forEach(adjId => {{
+          const to = locMap[adjId];
+          if (!to) return;
+          if (locId < adjId) {{ // draw each edge once
+            ctx.beginPath();
+            ctx.moveTo(from.cx, from.cy);
+            ctx.lineTo(to.cx, to.cy);
+            ctx.stroke();
+          }}
+        }});
+      }});
+    }}
+
+    // Draw communication edges (cumulative)
+    const maxCount = Math.max(1, ...edges.map(e => e.count));
     edges.forEach(e => {{
       const na = nodeMap[e.a], nb = nodeMap[e.b];
       if (!na || !nb) return;
       const isHover = hoverNode && (hoverNode.id === e.a || hoverNode.id === e.b);
-      const alpha = hoverNode ? (isHover ? 0.7 : 0.08) : 0.35;
+      const alpha = hoverNode ? (isHover ? 0.5 : 0.05) : 0.2;
       ctx.beginPath();
       ctx.moveTo(na.x, na.y);
       ctx.lineTo(nb.x, nb.y);
       ctx.strokeStyle = isHover ? na.color : `rgba(100,100,100,${{alpha}})`;
-      ctx.lineWidth = 1 + (e.count / maxCount) * 5;
+      ctx.lineWidth = 1 + (e.count / maxCount) * 4;
       ctx.stroke();
     }});
 
-    // Nodes
+    // Draw animated arcs
+    const now = timestamp;
+    activeArcs = activeArcs.filter(arc => {{
+      const elapsed = now - arc.startTime;
+      if (elapsed > arc.duration) return false;
+      const t = elapsed / arc.duration;
+      // Opacity: fade in then out
+      const opacity = t < 0.3 ? (t / 0.3) * 0.8 : 0.8 * (1 - (t - 0.3) / 0.7);
+      // Quadratic bezier with control point offset
+      const mx = (arc.x1 + arc.x2) / 2;
+      const my = (arc.y1 + arc.y2) / 2;
+      const dx = arc.x2 - arc.x1;
+      const dy = arc.y2 - arc.y1;
+      const cpx = mx - dy * 0.25;
+      const cpy = my + dx * 0.25;
+
+      ctx.beginPath();
+      ctx.moveTo(arc.x1, arc.y1);
+      ctx.quadraticCurveTo(cpx, cpy, arc.x2, arc.y2);
+      ctx.strokeStyle = arc.color.replace(')', `, ${{opacity}})`).replace('rgb(', 'rgba(');
+      // Handle hex colors
+      if (arc.color.startsWith('#')) {{
+        const r = parseInt(arc.color.slice(1, 3), 16);
+        const g = parseInt(arc.color.slice(3, 5), 16);
+        const b = parseInt(arc.color.slice(5, 7), 16);
+        ctx.strokeStyle = `rgba(${{r}},${{g}},${{b}},${{opacity}})`;
+      }}
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+
+      // Traveling dot
+      const dt = Math.min(t * 1.5, 1); // dot moves faster
+      const bx = (1-dt)*(1-dt)*arc.x1 + 2*(1-dt)*dt*cpx + dt*dt*arc.x2;
+      const by = (1-dt)*(1-dt)*arc.y1 + 2*(1-dt)*dt*cpy + dt*dt*arc.y2;
+      ctx.beginPath();
+      ctx.arc(bx, by, 3, 0, Math.PI * 2);
+      if (arc.color.startsWith('#')) {{
+        const r = parseInt(arc.color.slice(1, 3), 16);
+        const g = parseInt(arc.color.slice(3, 5), 16);
+        const b = parseInt(arc.color.slice(5, 7), 16);
+        ctx.fillStyle = `rgba(${{r}},${{g}},${{b}},${{Math.min(opacity * 1.5, 1)}})`;
+      }} else {{
+        ctx.fillStyle = arc.color;
+      }}
+      ctx.fill();
+      return true;
+    }});
+
+    // Draw nodes
     const maxTotal = Math.max(1, ...nodes.map(n => n.sent + n.recv));
     nodes.forEach(n => {{
+      // Check agent visibility toggle
+      const cb = document.querySelector(`input[data-agent="${{n.id}}"]`);
+      if (cb && !cb.checked) return;
+
       const total = n.sent + n.recv;
-      const radius = 8 + (total / maxTotal) * 16;
+      const radius = hasLocations ? 10 : 8 + (total / maxTotal) * 16;
       const isHover = hoverNode === n;
       const isDim = hoverNode && !isHover &&
         !edges.some(e => (e.a === hoverNode.id || e.b === hoverNode.id) &&
                          (e.a === n.id || e.b === n.id));
+      const restDim = n.dimmed;
+
+      // Resting agents: reduced opacity
+      const baseAlpha = restDim ? 0.4 : 1.0;
+
+      ctx.globalAlpha = isDim ? 0.25 : baseAlpha;
       ctx.beginPath();
       ctx.arc(n.x, n.y, radius, 0, Math.PI * 2);
-      ctx.fillStyle = isDim ? 'rgba(60,60,60,0.5)' : n.color;
+      ctx.fillStyle = n.color;
       ctx.fill();
       if (isHover) {{
         ctx.strokeStyle = '#fff';
         ctx.lineWidth = 2;
         ctx.stroke();
       }}
-      // Label
+
+      // Agent name label
       ctx.font = `${{isHover ? '600' : '500'}} 11px 'IBM Plex Sans', sans-serif`;
       ctx.textAlign = 'center';
-      ctx.fillStyle = isDim ? 'rgba(100,100,100,0.5)' : '#e0e0e0';
+      ctx.fillStyle = '#e0e0e0';
       ctx.fillText(n.name, n.x, n.y + radius + 14);
+
+      // Action status label (dim, below name)
+      if (n.lastAction) {{
+        ctx.font = "400 9px 'IBM Plex Mono', monospace";
+        ctx.fillStyle = restDim ? 'rgba(140,140,140,0.4)' : 'rgba(140,140,140,0.7)';
+        ctx.fillText(n.lastAction, n.x, n.y + radius + 25);
+      }}
+
+      ctx.globalAlpha = 1;
     }});
+
+    // Continue animation if arcs are active or nodes are moving
+    let needsAnim = activeArcs.length > 0;
+    if (hasLocations) {{
+      nodes.forEach(n => {{
+        if (Math.abs(n.targetX - n.x) > 0.5 || Math.abs(n.targetY - n.y) > 0.5) needsAnim = true;
+      }});
+    }}
+    if (needsAnim) {{
+      animId = requestAnimationFrame(drawFrame);
+    }} else {{
+      animating = false;
+    }}
   }}
 
-  window.drawNetwork = drawNetwork;
-  drawNetwork();
+  function ensureAnimating() {{
+    if (!animating) {{
+      animating = true;
+      animId = requestAnimationFrame(drawFrame);
+    }}
+  }}
 
-  // Interaction
+  // ─── Go to a specific tick (scrub) ─────────────────────────────────
+  function goToTick(tick, animate) {{
+    currentTick = tick;
+    slider.value = tick;
+    tickVal.textContent = `Tick ${{tick}} / ${{maxTick}}`;
+
+    applyStateTo(tick);
+    edges = computeEdges(tick);
+
+    if (hasLocations) {{
+      // Recompute target positions
+      const groups = {{}};
+      nodes.forEach(n => {{
+        const loc = agentLocation[n.id] || '';
+        if (!groups[loc]) groups[loc] = [];
+        groups[loc].push(n);
+      }});
+      Object.keys(groups).forEach(locId => {{
+        const box = locMap[locId];
+        if (!box) return;
+        const members = groups[locId];
+        const cols = Math.ceil(Math.sqrt(members.length));
+        const rows = Math.ceil(members.length / cols);
+        const spacingX = box.w / (cols + 1);
+        const spacingY = (box.h - 24) / (rows + 1);
+        members.forEach((n, i) => {{
+          const col = i % cols;
+          const row = Math.floor(i / cols);
+          n.targetX = box.x + spacingX * (col + 1);
+          n.targetY = box.y + 24 + spacingY * (row + 1);
+          if (!animate) {{
+            n.x = n.targetX;
+            n.y = n.targetY;
+          }}
+        }});
+      }});
+    }}
+
+    // Spawn communication arcs for this tick only if animating
+    if (animate) {{
+      const tickComms = commsData.filter(c => c.tick === tick);
+      tickComms.forEach(c => {{
+        const sender = nodeMap[c.from];
+        spawnArc(c.from, c.to, sender ? sender.color : '#60a5fa');
+      }});
+    }}
+
+    ensureAnimating();
+    if (!animate && !animating) {{
+      drawFrame(performance.now());
+    }}
+  }}
+
+  window.drawNetwork = () => drawFrame(performance.now());
+
+  // Initial draw
+  goToTick(1, false);
+
+  // ─── Playback controls ──────────────────────────────────────────────
+  function stopPlayback() {{
+    playing = false;
+    playBtn.innerHTML = '&#9654;';
+    if (playTimer) {{ clearTimeout(playTimer); playTimer = null; }}
+  }}
+
+  function startPlayback() {{
+    playing = true;
+    playBtn.innerHTML = '&#9646;&#9646;';
+    advanceTick();
+  }}
+
+  function advanceTick() {{
+    if (!playing) return;
+    if (currentTick >= maxTick) {{
+      stopPlayback();
+      return;
+    }}
+    currentTick++;
+    goToTick(currentTick, true);
+    const delay = 2000 / playSpeed;
+    playTimer = setTimeout(advanceTick, delay);
+  }}
+
+  playBtn.addEventListener('click', () => {{
+    if (playing) {{
+      stopPlayback();
+    }} else {{
+      if (currentTick >= maxTick) currentTick = 0;
+      startPlayback();
+    }}
+  }});
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {{
+    btn.addEventListener('click', () => {{
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      playSpeed = parseInt(btn.dataset.speed);
+    }});
+  }});
+
+  // Slider scrub
+  slider.addEventListener('input', () => {{
+    stopPlayback();
+    goToTick(parseInt(slider.value), false);
+  }});
+
+  // ─── Mouse interaction ──────────────────────────────────────────────
   function getNode(mx, my) {{
     const maxTotal = Math.max(1, ...nodes.map(n => n.sent + n.recv));
     for (let i = nodes.length - 1; i >= 0; i--) {{
       const n = nodes[i];
-      const r = 8 + ((n.sent + n.recv) / maxTotal) * 16;
+      const r = hasLocations ? 10 : 8 + ((n.sent + n.recv) / maxTotal) * 16;
       if ((mx - n.x) ** 2 + (my - n.y) ** 2 < (r + 4) ** 2) return n;
     }}
     return null;
@@ -1581,16 +2077,19 @@ function initNetwork() {{
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     if (dragNode) {{
       dragNode.x = mx; dragNode.y = my;
-      drawNetwork();
+      dragNode.targetX = mx; dragNode.targetY = my;
+      ensureAnimating();
     }} else {{
       const prev = hoverNode;
       hoverNode = getNode(mx, my);
-      if (hoverNode !== prev) drawNetwork();
+      if (hoverNode !== prev) ensureAnimating();
       if (hoverNode) {{
+        const loc = agentLocation[hoverNode.id] || 'unknown';
         tooltip.style.display = 'block';
         tooltip.innerHTML = `<div class="tt-name">${{hoverNode.fullName}}</div>` +
-          `<div class="tt-role">${{hoverNode.role}}</div>` +
-          `<div class="tt-stat">Sent: ${{hoverNode.sent}} &middot; Received: ${{hoverNode.recv}}</div>`;
+          `<div class="tt-role">${{hoverNode.role}}${{hasLocations ? ' — ' + loc : ''}}</div>` +
+          `<div class="tt-stat">Sent: ${{hoverNode.sent}} &middot; Received: ${{hoverNode.recv}}</div>` +
+          (hoverNode.lastAction ? `<div class="tt-stat">Action: ${{hoverNode.lastAction}}</div>` : '');
         tooltip.style.left = (mx + 16) + 'px';
         tooltip.style.top = (my - 10) + 'px';
       }} else {{
@@ -1603,16 +2102,11 @@ function initNetwork() {{
     dragNode = null;
     hoverNode = null;
     tooltip.style.display = 'none';
-    drawNetwork();
+    ensureAnimating();
   }});
 
-  // Tick slider
-  slider.addEventListener('input', () => {{
-    currentMaxTick = parseInt(slider.value);
-    tickVal.textContent = 'Tick ' + currentMaxTick;
-    edges = computeEdges(currentMaxTick);
-    drawNetwork();
-  }});
+  // ─── Agent toggle visibility also affects network ───────────────────
+  checkboxes.forEach(cb => cb.addEventListener('change', () => {{ ensureAnimating(); }}));
 }}
 </script>
 </body>
