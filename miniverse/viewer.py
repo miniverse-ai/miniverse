@@ -1667,6 +1667,25 @@ function initNetwork() {{
   }});
 
   // Apply actions up to a given tick (for scrubbing)
+  // Fuzzy-match a move_to target to a known location ID.
+  // LLMs output display names ("Neon Market") or sub-locations ("alley_locker")
+  // instead of the canonical IDs ("market", "alley").
+  function resolveLocation(target) {{
+    if (!target) return null;
+    const t = target.toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Exact match first
+    if (locMap[target]) return target;
+    // Check if target contains or is contained by a known location ID or name
+    for (const loc of locationsData) {{
+      const lid = loc.id.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const lname = loc.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (t === lid || t === lname) return loc.id;
+      if (t.includes(lid) || lid.includes(t)) return loc.id;
+      if (t.includes(lname) || lname.includes(t)) return loc.id;
+    }}
+    return null; // Unknown location — keep agent where they are
+  }}
+
   function applyStateTo(tick) {{
     // Reset locations to starting
     Object.keys(startingLocations).forEach(aid => {{ agentLocation[aid] = startingLocations[aid]; }});
@@ -1676,7 +1695,8 @@ function initNetwork() {{
       const acts = tickActions[t] || [];
       acts.forEach(a => {{
         if (a.type === 'move_to' && a.target) {{
-          agentLocation[a.agent] = a.target;
+          const resolved = resolveLocation(a.target);
+          if (resolved) agentLocation[a.agent] = resolved;
         }}
         if (a.type === 'communicate') {{
           if (nodeMap[a.agent]) nodeMap[a.agent].sent++;
