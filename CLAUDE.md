@@ -101,8 +101,10 @@ Design for Claude to operate. The `/miniverse` skill should let Claude guide use
 | `miniverse/orchestrator.py` | Simulation loop, dependency injection |
 | `miniverse/schemas.py` | All Pydantic models |
 | `miniverse/cognition/` | Planner, executor, reflection, prompts |
+| `miniverse/cognition/context.py` | Prompt context assembly (metadata stripped for agent privacy) |
 | `miniverse/memory.py` | Memory strategies |
 | `miniverse/persistence.py` | State persistence backends |
+| `miniverse/viewer.py` | HTML transcript viewer (renders logs to self-contained HTML) |
 
 ### Common Commands
 

@@ -171,6 +171,43 @@ bash demo/valentines/run.sh
 uv run miniverse run demo/valentines/scenario.yaml --llm --world-engine deterministic --verbose --ticks 15
 ```
 
+### Order of the Threshold
+
+9-agent cyberpunk scenario exploring emergent social dynamics with asymmetric hidden information. Some agents have secret goals that drive covert coordination and social influence — behaviors emerge from faithful character simulation, not explicit instruction.
+
+```bash
+# Run the simulation
+bash demo/threshold/run.sh
+
+# View the transcript in browser
+python -m miniverse.viewer demo/threshold/logs/threshold_llm_*.log --open
+```
+
+---
+
+## Transcript Viewer
+
+Miniverse includes an HTML transcript viewer adapted from [Helm](https://github.com/k3nnethfrancis/helm)'s viewer. It renders simulation logs as self-contained HTML files with per-agent timelines, color-coded actions, and a communications sidebar.
+
+```bash
+# Render a log to HTML and open in browser
+python -m miniverse.viewer path/to/simulation.log --open
+
+# Render to a specific output path
+python -m miniverse.viewer path/to/simulation.log -o transcript.html
+
+# Render without opening
+python -m miniverse.viewer path/to/simulation.log
+```
+
+Features:
+- **Per-agent panels** with tick-by-tick action timelines
+- **Communications sidebar** showing all inter-agent messages chronologically
+- **Color-coded actions** (communicate=green, move=blue, investigate=purple, work=gray, rest=amber)
+- **Comms-only toggle** to filter to just inter-agent messages
+- **Agent visibility toggles** to show/hide specific agents
+- **Dark theme** with IBM Plex fonts, self-contained single HTML file
+
 ---
 
 ## Architecture

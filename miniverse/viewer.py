@@ -1264,13 +1264,16 @@ updateGrid();
 
 if __name__ == "__main__":
     import sys
+    import webbrowser
 
     if len(sys.argv) < 2:
-        print("Usage: python -m miniverse.viewer <log_file> [-o output.html]")
+        print("Usage: python -m miniverse.viewer <log_file> [-o output.html] [--open]")
         sys.exit(1)
 
     log_file = sys.argv[1]
     out_file = None
+    should_open = "--open" in sys.argv
+
     if "-o" in sys.argv:
         idx = sys.argv.index("-o")
         if idx + 1 < len(sys.argv):
@@ -1278,3 +1281,6 @@ if __name__ == "__main__":
 
     result = render_log(log_file, out_file)
     print(f"Rendered: {result}")
+
+    if should_open:
+        webbrowser.open(f"file://{Path(result).resolve()}")
