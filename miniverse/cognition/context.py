@@ -33,10 +33,15 @@ class PromptContext:
     def to_payload(self) -> Dict[str, Any]:
         """Return a JSON-serializable payload of the context."""
 
+        world_dump = self.world_snapshot.model_dump(mode="json")
+        # Strip runtime/demo metadata from world snapshot to prevent agents
+        # from seeing other agents' private prompts or scenario-level secrets.
+        world_dump.pop("metadata", None)
+
         return {
             "profile": self.agent_profile.model_dump(mode="json"),
             "perception": self.perception.model_dump(mode="json"),
-            "world": self.world_snapshot.model_dump(mode="json"),
+            "world": world_dump,
             "scratchpad": _sanitize(self.scratchpad_state),
             "plan_state": self.plan_state,
             "memories": [memory.model_dump(mode="json") for memory in self.memories],
