@@ -149,8 +149,10 @@ def _build_threshold_prompt_library():
                 "Use context to produce JSON that follows the example schema."
             ),
             user=(
+                "{{initial_state_agent_prompt}}\n\n"
                 "Context summary:\n{{context_summary}}\n\n"
-                "Environment JSON:\n{{context_json}}\n\n"
+                "Current perception:\n{{perception_json}}\n\n"
+                "Recent memories:\n{{memories_text}}\n\n"
                 "Planning rules:\n"
                 "- Respect current date/time and location context.\n"
                 "- Keep steps realistic for daily life in a cyberpunk district.\n"
@@ -207,15 +209,20 @@ def _build_threshold_prompt_library():
             system=(
                 "Write a brief diary-style reflection from this character's perspective. "
                 "Stay in character. Note what happened, what you're thinking, and what you might do next. "
+                "Consider patterns in your recent experiences. What have you learned? "
+                "What relationships are developing? What should you do differently? "
                 "Return JSON with a 'reflections' list."
             ),
             user=(
+                "{{initial_state_agent_prompt}}\n\n"
                 "Context summary:\n{{context_summary}}\n\n"
-                "Full JSON:\n{{context_json}}\n\n"
+                "Current perception:\n{{perception_json}}\n\n"
+                "Recent memories:\n{{memories_text}}\n\n"
                 "Example output:\n"
                 "{\n"
                 "  \"reflections\": [\n"
-                "    {\"content\": \"Had an interesting conversation today. There might be an opening there.\", \"importance\": 6}\n"
+                "    {\"content\": \"Had an interesting conversation today. There might be an opening there.\", \"importance\": 6},\n"
+                "    {\"content\": \"I should be more careful about how I approach new contacts.\", \"importance\": 7}\n"
                 "  ]\n"
                 "}\n\n"
                 "Respond with JSON only."
@@ -372,6 +379,25 @@ def _build_threshold_available_actions() -> list[dict]:
                 }
             ],
         },
+        {
+            "name": "do_nothing",
+            "schema": {
+                "action_type": "do_nothing",
+                "target": None,
+                "parameters": {},
+                "reasoning": "<string>",
+                "communication": None,
+            },
+            "examples": [
+                {
+                    "action_type": "do_nothing",
+                    "target": None,
+                    "parameters": {},
+                    "reasoning": "Nothing needs my attention right now. Continuing as normal.",
+                    "communication": None,
+                }
+            ],
+        },
     ]
 
 
@@ -412,6 +438,10 @@ def build_llm_policy_cognition(
             reflection=ReflectionCadence(
                 interval=TickInterval(every=4, offset=2),
                 require_new_memories=True,
+                # Poignancy trigger: also reflect when accumulated importance
+                # exceeds threshold (Stanford pattern). Threshold of 30 means
+                # ~4-5 normal memories or 2-3 high-importance ones trigger reflection.
+                poignancy_threshold=30.0,
             ),
         )
         cognition_map[agent_id] = AgentCognition(

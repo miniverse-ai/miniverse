@@ -21,8 +21,11 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 from uuid import UUID
 from datetime import datetime
+import logging
 
 from miniverse.schemas import AgentMemory
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -798,6 +801,259 @@ class BM25MemoryStrategy(MemoryStrategy):
                 adjusted_recency_weight * recency_score
                 + adjusted_importance_weight * importance_score
             )
+            scored.append((final_score, mem.content))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [content for _, content in scored[:limit]]
+
+    async def clear_agent_memories(self, run_id: UUID, agent_id: str) -> None:
+        await self.persistence.clear_agent_memories(run_id, agent_id)
+
+
+class SemanticMemoryStrategy(MemoryStrategy):
+    """
+    Stanford-style three-factor memory retrieval: recency + importance + relevance.
+
+    Combines:
+    - Semantic similarity via sentence-transformer embeddings (relevance)
+    - BM25 keyword matching (lexical recall for exact terms)
+    - Exponential recency decay (Stanford: 0.995^hours, here: configurable per tick)
+    - Importance with access-based refresh (memories fade unless re-accessed)
+
+    This is the research-grade memory strategy for experiments where emergent
+    behavior depends on agents drawing connections across experiences.
+    """
+
+    def __init__(
+        self,
+        persistence,
+        *,
+        embedding_model: str = "all-MiniLM-L6-v2",
+        relevance_weight: float = 0.4,
+        recency_weight: float = 0.3,
+        importance_weight: float = 0.2,
+        bm25_weight: float = 0.1,
+        window: int = 200,
+        decay_rate: float = 0.95,
+        k1: float = 1.5,
+        b: float = 0.75,
+    ) -> None:
+        """
+        Args:
+            persistence: PersistenceStrategy for storage
+            embedding_model: sentence-transformers model name
+            relevance_weight: Weight for semantic similarity (0-1)
+            recency_weight: Weight for recency decay (0-1)
+            importance_weight: Weight for importance score (0-1)
+            bm25_weight: Weight for BM25 lexical match (0-1)
+            window: Max memories to consider per retrieval
+            decay_rate: Recency decay per tick (Stanford uses 0.995/hour)
+            k1, b: BM25 parameters
+        """
+        self.persistence = persistence
+        self.embedding_model_name = embedding_model
+        self.relevance_weight = relevance_weight
+        self.recency_weight = recency_weight
+        self.importance_weight = importance_weight
+        self.bm25_weight = bm25_weight
+        self.window = max(window, 1)
+        self.decay_rate = decay_rate
+        self.k1 = k1
+        self.b = b
+
+        # Lazy-loaded embedding model and cache
+        self._model = None
+        self._embedding_cache: Dict[str, list] = {}
+
+    def _get_model(self):
+        """Lazy-load the sentence transformer model."""
+        if self._model is None:
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._model = SentenceTransformer(self.embedding_model_name)
+                logger.info(f"Loaded embedding model: {self.embedding_model_name}")
+            except ImportError:
+                raise ImportError(
+                    "sentence-transformers required for SemanticMemoryStrategy. "
+                    "Install with: uv add sentence-transformers"
+                )
+        return self._model
+
+    def _embed(self, texts: List[str]) -> list:
+        """Compute embeddings with caching."""
+        model = self._get_model()
+        uncached = [t for t in texts if t not in self._embedding_cache]
+        if uncached:
+            embeddings = model.encode(uncached, show_progress_bar=False)
+            for text, emb in zip(uncached, embeddings):
+                self._embedding_cache[text] = emb.tolist()
+        return [self._embedding_cache[t] for t in texts]
+
+    def _cosine_similarity(self, a: list, b: list) -> float:
+        """Compute cosine similarity between two vectors."""
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = math.sqrt(sum(x * x for x in a))
+        norm_b = math.sqrt(sum(x * x for x in b))
+        if norm_a == 0 or norm_b == 0:
+            return 0.0
+        return dot / (norm_a * norm_b)
+
+    async def initialize(self) -> None:
+        # Pre-load model on init so first retrieval isn't slow
+        self._get_model()
+
+    async def close(self) -> None:
+        self._embedding_cache.clear()
+
+    async def add_memory(
+        self,
+        run_id: UUID,
+        agent_id: str,
+        tick: int,
+        memory_type: str,
+        content: str,
+        importance: int = 5,
+        *,
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        embedding_key: Optional[str] = None,
+        branch_id: Optional[str] = None,
+    ) -> AgentMemory:
+        import uuid
+
+        memory = AgentMemory(
+            id=uuid.uuid4(),
+            run_id=run_id,
+            agent_id=agent_id,
+            tick=tick,
+            memory_type=memory_type,
+            content=content,
+            importance=importance,
+            tags=tags or [],
+            metadata=metadata or {},
+            embedding_key=embedding_key,
+            branch_id=branch_id,
+            created_at=datetime.now(),
+            last_accessed_tick=None,
+        )
+
+        # Pre-compute embedding on add (amortize cost)
+        self._embed([content])
+
+        await self.persistence.save_memory(run_id, memory)
+        return memory
+
+    async def get_recent_memories(
+        self, run_id: UUID, agent_id: str, limit: int = 10
+    ) -> List[str]:
+        memories = await self.persistence.get_recent_memories(run_id, agent_id, limit)
+        return [m.content for m in memories]
+
+    async def get_relevant_memories(
+        self,
+        run_id: UUID,
+        agent_id: str,
+        query: str,
+        limit: int = 5,
+    ) -> List[str]:
+        """
+        Three-factor retrieval: relevance (semantic + BM25) + recency + importance.
+
+        Stanford formula adapted:
+            score = relevance_weight * semantic_sim
+                  + bm25_weight * normalized_bm25
+                  + recency_weight * decay_score
+                  + importance_weight * decayed_importance
+        """
+        candidate_memories = await self.persistence.get_recent_memories(
+            run_id, agent_id, self.window
+        )
+        if not candidate_memories:
+            return []
+
+        if not query or not query.strip():
+            return await self._score_without_query(candidate_memories, limit)
+
+        most_recent_tick = candidate_memories[0].tick
+
+        # Compute semantic similarity
+        query_embedding = self._embed([query])[0]
+        memory_contents = [m.content for m in candidate_memories]
+        memory_embeddings = self._embed(memory_contents)
+
+        # Compute BM25 scores
+        query_tokens = tokenize(query)
+        documents = [
+            (m.content, tokenize(m.content + " " + " ".join(m.tags)))
+            for m in candidate_memories
+        ]
+        bm25_results = compute_bm25_scores(query_tokens, documents, self.k1, self.b)
+        max_bm25 = max((s for _, s in bm25_results), default=1.0) or 1.0
+        bm25_map = {content: score / max_bm25 for content, score in bm25_results}
+
+        # Score each memory
+        scored: List[Tuple[float, str, AgentMemory]] = []
+        for mem, mem_emb in zip(candidate_memories, memory_embeddings):
+            # Semantic relevance (cosine similarity, already in [0,1] for normalized embeddings)
+            semantic_score = max(0.0, self._cosine_similarity(query_embedding, mem_emb))
+
+            # BM25 lexical relevance
+            bm25_score = bm25_map.get(mem.content, 0.0)
+
+            # Recency: exponential decay from most recent tick
+            ticks_ago = max(most_recent_tick - mem.tick, 0)
+            recency_score = self.decay_rate ** ticks_ago
+
+            # Importance with access-based decay:
+            # Base importance decays from creation tick, but resets on access
+            reference_tick = mem.last_accessed_tick if mem.last_accessed_tick is not None else mem.tick
+            ticks_since_access = max(most_recent_tick - reference_tick, 0)
+            importance_decay = self.decay_rate ** (ticks_since_access * 0.5)  # slower decay than recency
+            importance_score = (mem.importance / 10.0) * importance_decay
+
+            final_score = (
+                self.relevance_weight * semantic_score
+                + self.bm25_weight * bm25_score
+                + self.recency_weight * recency_score
+                + self.importance_weight * importance_score
+            )
+
+            scored.append((final_score, mem.content, mem))
+
+        # Sort by score, return top results
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        # Mark retrieved memories as accessed (refresh their decay clock)
+        for _, _, mem in scored[:limit]:
+            mem.last_accessed_tick = most_recent_tick
+
+        return [content for _, content, _ in scored[:limit]]
+
+    async def _score_without_query(
+        self, memories: List[AgentMemory], limit: int
+    ) -> List[str]:
+        """Score using recency + importance only (no query)."""
+        if not memories:
+            return []
+
+        most_recent_tick = memories[0].tick
+        scored: List[Tuple[float, str]] = []
+
+        for mem in memories[:limit * 2]:
+            ticks_ago = max(most_recent_tick - mem.tick, 0)
+            recency_score = self.decay_rate ** ticks_ago
+
+            reference_tick = mem.last_accessed_tick if mem.last_accessed_tick is not None else mem.tick
+            ticks_since_access = max(most_recent_tick - reference_tick, 0)
+            importance_decay = self.decay_rate ** (ticks_since_access * 0.5)
+            importance_score = (mem.importance / 10.0) * importance_decay
+
+            # Redistribute relevance weight to recency + importance
+            total = self.recency_weight + self.importance_weight
+            adj_recency = self.recency_weight / total if total > 0 else 0.5
+            adj_importance = self.importance_weight / total if total > 0 else 0.5
+
+            final_score = adj_recency * recency_score + adj_importance * importance_score
             scored.append((final_score, mem.content))
 
         scored.sort(key=lambda x: x[0], reverse=True)

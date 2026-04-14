@@ -94,6 +94,15 @@ def run(
             "'llm' (emergent events), 'auto' (LLM if available)"
         ),
     ),
+    memory: str = typer.Option(
+        "bm25",
+        "--memory",
+        "-m",
+        help=(
+            "Memory strategy: 'bm25' (default, keyword retrieval), "
+            "'semantic' (embeddings + BM25 + decay), 'simple' (FIFO)"
+        ),
+    ),
 ) -> None:
     """Run a simulation with the specified scenario."""
     _validate_run_options(
@@ -112,6 +121,7 @@ def run(
             verbose=verbose,
             debug=debug,
             world_engine_mode=world_engine,
+            memory_strategy=memory,
         )
     )
 
@@ -589,6 +599,7 @@ async def _run_simulation(
     verbose: bool,
     debug: bool,
     world_engine_mode: str,
+    memory_strategy: str = "bm25",
 ) -> None:
     """Core simulation execution logic."""
     import contextlib
@@ -649,6 +660,18 @@ async def _run_simulation(
         debug=debug,
     )
 
+    # Build memory strategy
+    memory_obj = None
+    if memory_strategy == "semantic":
+        from miniverse.memory import SemanticMemoryStrategy
+        from miniverse.persistence import InMemoryPersistence
+        # SemanticMemoryStrategy needs persistence; orchestrator creates its own
+        # persistence, so we'll let it be injected after persistence init.
+        # For now, pass None and let orchestrator handle it with a flag.
+        memory_obj = "semantic"  # sentinel — resolved after persistence init
+    elif memory_strategy == "simple":
+        memory_obj = "simple"
+
     orchestrator = Orchestrator(
         world_state=world_state,
         agents=profiles_map,
@@ -661,6 +684,15 @@ async def _run_simulation(
         agent_cognition=cognition_map,
         log_mode=log_mode,
     )
+
+    # Override memory strategy if requested
+    if memory_strategy == "semantic":
+        from miniverse.memory import SemanticMemoryStrategy
+        orchestrator.memory = SemanticMemoryStrategy(orchestrator.persistence)
+        await orchestrator.memory.initialize()
+    elif memory_strategy == "simple":
+        from miniverse.memory import SimpleMemoryStream
+        orchestrator.memory = SimpleMemoryStream(orchestrator.persistence)
 
     if use_llm and output_format == "text" and not quiet:
         _print_llm_setup(

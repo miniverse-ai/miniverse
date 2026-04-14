@@ -667,6 +667,13 @@ class AgentMemory(BaseModel):
         description="Timeline identifier for branching/loom scenarios",
     )
     created_at: datetime = Field(..., description="When record was created")
+    # last_accessed tracks when this memory was last retrieved for use in cognition.
+    # Enables Stanford-style exponential decay: memories fade unless re-accessed.
+    # None means never accessed (only created).
+    last_accessed_tick: Optional[int] = Field(
+        None,
+        description="Tick when this memory was last retrieved (for importance decay)",
+    )
 
 
 class SimulationError(BaseModel):

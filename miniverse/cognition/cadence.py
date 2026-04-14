@@ -67,10 +67,25 @@ class PlannerCadence:
 
 @dataclass(frozen=True)
 class ReflectionCadence:
-    """Configuration knobs for reflection execution frequency."""
+    """Configuration knobs for reflection execution frequency.
+
+    Supports two trigger modes:
+    - **Tick-based** (default): reflect every N ticks via interval
+    - **Poignancy-based** (Stanford pattern): reflect when accumulated importance
+      of recent memories exceeds a threshold, regardless of tick count
+
+    When poignancy_threshold > 0, reflection fires whenever accumulated importance
+    since last reflection exceeds the threshold. This ensures agents reflect after
+    critical events (overhearing suspicious conversation, receiving important message)
+    rather than on arbitrary schedules.
+
+    Stanford uses threshold=150, resulting in ~2-3 reflections per game day.
+    For Miniverse with shorter runs, lower thresholds (30-50) work better.
+    """
 
     interval: TickInterval = field(default_factory=TickInterval)
     require_new_memories: bool = False
+    poignancy_threshold: float = 0.0
 
     def should_reflect(
         self,
@@ -78,11 +93,23 @@ class ReflectionCadence:
         tick: int,
         last_run_tick: Optional[int],
         new_memories: int,
+        accumulated_importance: float = 0.0,
     ) -> bool:
-        """Return ``True`` when the reflection engine should run."""
+        """Return ``True`` when the reflection engine should run.
 
+        Parameters
+        ----------
+        tick: Current simulation tick.
+        last_run_tick: Last tick reflection was run.
+        new_memories: Count of new memories this tick.
+        accumulated_importance: Sum of importance scores since last reflection.
+        """
         if self.require_new_memories and new_memories <= 0:
             return False
+
+        # Poignancy trigger: fire when accumulated importance exceeds threshold
+        if self.poignancy_threshold > 0 and accumulated_importance >= self.poignancy_threshold:
+            return True
 
         return self.interval.is_due(tick=tick, last_run_tick=last_run_tick)
 
