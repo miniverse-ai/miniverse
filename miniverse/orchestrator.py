@@ -26,7 +26,7 @@ from .llm_calls import process_world_update
 from .schemas import AgentProfile, WorldState, AgentAction, AgentMemory
 from .simulation_rules import SimulationRules, format_resources_generic
 from .persistence import PersistenceStrategy, InMemoryPersistence
-from .memory import MemoryStrategy, SimpleMemoryStream, BM25MemoryStrategy
+from .memory import MemoryStrategy, SimpleMemoryStream, BM25MemoryStrategy, SemanticMemoryStrategy
 from .logging_utils import (
     colored,
     Color,
@@ -1391,6 +1391,12 @@ class Orchestrator:
 
         # Store actions as memories
         for action in actions:
+            # Skip memory creation for do_nothing — these are non-events that
+            # would pollute the memory stream with noise. The agent chose inaction,
+            # which is meaningful as a behavioral signal but not as a memory.
+            if action.action_type == "do_nothing":
+                continue
+
             # Capture the action itself so downstream retrieval engines can filter by type/target.
             memory = await self.memory.add_memory(
                 run_id=self.run_id,
@@ -1748,21 +1754,40 @@ class Orchestrator:
             if cognition.reflection is None:
                 continue
 
-            # Count new memories created this tick. Reflection cadence may trigger based on
-            # memory accumulation (e.g., reflect after every 5 new experiences) rather than
-            # fixed time intervals.
-            new_memory_count = len(new_memories.get(agent_id, []))
+            # Count new memories and accumulate importance for poignancy trigger.
+            # Stanford pattern: reflect when accumulated importance exceeds threshold,
+            # ensuring agents reflect after critical events, not just on schedule.
+            agent_new_memories = new_memories.get(agent_id, [])
+            new_memory_count = len(agent_new_memories)
+            accumulated_importance = sum(m.importance for m in agent_new_memories)
+
+            # Add importance accumulated since last reflection (stored in scratchpad)
+            prior_accumulated = self._get_scratchpad_value(
+                cognition, "__reflection_accumulated_importance", 0.0
+            )
+            total_accumulated = prior_accumulated + accumulated_importance
+
             cadence = cognition.cadence.reflection
             last_reflection_tick = self._get_scratchpad_value(cognition, REFLECTION_LAST_TICK_KEY)
 
-            # Check if reflection should trigger. Cadence considers both time elapsed and
-            # memory count to balance insight generation with LLM cost. Skip if not ready.
+            # Check if reflection should trigger. Cadence considers tick interval,
+            # memory count, AND accumulated importance (poignancy threshold).
             if not cadence.should_reflect(
                 tick=tick,
                 last_run_tick=last_reflection_tick,
                 new_memories=new_memory_count,
+                accumulated_importance=total_accumulated,
             ):
+                # Store accumulated importance for next tick check
+                self._set_scratchpad_value(
+                    cognition, "__reflection_accumulated_importance", total_accumulated
+                )
                 continue
+
+            # Reset accumulator on reflection trigger
+            self._set_scratchpad_value(
+                cognition, "__reflection_accumulated_importance", 0.0
+            )
 
             # Retrieve larger memory window (20 vs 10) for reflection. Reflections synthesize
             # longer-term patterns, so need broader historical context than tick actions.

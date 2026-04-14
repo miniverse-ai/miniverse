@@ -31,12 +31,27 @@ class PromptContext:
     extra: Dict[str, Any] = field(default_factory=dict)
 
     def to_payload(self) -> Dict[str, Any]:
-        """Return a JSON-serializable payload of the context."""
+        """Return a JSON-serializable payload of the context.
+
+        Information isolation: strips metadata (private prompts, scenario secrets)
+        and agents list (other agents' statuses) from world dump. Agents observe
+        the world through their perception, not the raw omniscient state.
+        """
 
         world_dump = self.world_snapshot.model_dump(mode="json")
-        # Strip runtime/demo metadata from world snapshot to prevent agents
-        # from seeing other agents' private prompts or scenario-level secrets.
+        # Strip runtime/demo metadata to prevent agents from seeing other agents'
+        # private prompts or scenario-level secrets.
         world_dump.pop("metadata", None)
+        # Strip agents list — agents should see other agents only through
+        # perception (partial observability) and memory (what they've observed).
+        # Including the full agents list leaks locations, activities, and attributes
+        # of all agents, breaking information asymmetry.
+        world_dump.pop("agents", None)
+
+        # Sanitize extra but strip LLM credentials and internal keys
+        extra_safe = _sanitize(self.extra)
+        for key in ("llm_provider", "llm_model", "prompt_library"):
+            extra_safe.pop(key, None)
 
         return {
             "profile": self.agent_profile.model_dump(mode="json"),
@@ -45,7 +60,7 @@ class PromptContext:
             "scratchpad": _sanitize(self.scratchpad_state),
             "plan_state": self.plan_state,
             "memories": [memory.model_dump(mode="json") for memory in self.memories],
-            "extra": _sanitize(self.extra),
+            "extra": extra_safe,
         }
 
     def to_json(self) -> str:
