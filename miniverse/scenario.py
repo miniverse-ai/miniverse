@@ -315,23 +315,45 @@ class ScenarioLoader:
     def _parse_environment_graph(self, data: Dict[str, Any]) -> EnvironmentGraphState:
         nodes: Dict[str, LocationNodeState] = {}
         raw_nodes = data.get("nodes", {})
-        for key, value in raw_nodes.items():
-            if isinstance(value, dict):
-                nodes[key] = LocationNodeState(
-                    name=value.get("name", key),
-                    capacity=value.get("capacity"),
-                    metadata=value.get("metadata", {}),
+        # Support both dict-keyed format and list-of-objects format:
+        #   dict: {market: {name: Neon Market, capacity: 8}}
+        #   list: [{id: market, label: Neon Market, capacity: 8}]
+        if isinstance(raw_nodes, list):
+            for item in raw_nodes:
+                node_id = item.get("id", "")
+                nodes[node_id] = LocationNodeState(
+                    name=item.get("label", item.get("name", node_id)),
+                    capacity=item.get("capacity"),
+                    metadata=item.get("metadata", {}),
                 )
-            else:
-                nodes[key] = LocationNodeState(name=key)
+        elif isinstance(raw_nodes, dict):
+            for key, value in raw_nodes.items():
+                if isinstance(value, dict):
+                    nodes[key] = LocationNodeState(
+                        name=value.get("name", key),
+                        capacity=value.get("capacity"),
+                        metadata=value.get("metadata", {}),
+                    )
+                else:
+                    nodes[key] = LocationNodeState(name=key)
 
         adjacency: Dict[str, List[str]] = {}
         raw_adj = data.get("adjacency", {})
-        for key, neighbors in raw_adj.items():
-            if isinstance(neighbors, (list, tuple)):
-                adjacency[key] = list(neighbors)
-            else:
-                adjacency[key] = []
+        # Support both dict format and list-of-pairs format:
+        #   dict: {market: [clinic, lounge]}
+        #   list: [[market, clinic], [market, lounge]]
+        if isinstance(raw_adj, list):
+            for pair in raw_adj:
+                if isinstance(pair, (list, tuple)) and len(pair) == 2:
+                    a, b = pair
+                    adjacency.setdefault(a, []).append(b)
+                    adjacency.setdefault(b, []).append(a)
+        elif isinstance(raw_adj, dict):
+            for key, neighbors in raw_adj.items():
+                if isinstance(neighbors, (list, tuple)):
+                    adjacency[key] = list(neighbors)
+                else:
+                    adjacency[key] = []
 
         return EnvironmentGraphState(nodes=nodes, adjacency=adjacency)
 
