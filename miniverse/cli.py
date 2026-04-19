@@ -103,8 +103,42 @@ def run(
             "'semantic' (embeddings + BM25 + decay), 'simple' (FIFO)"
         ),
     ),
+    async_mode: bool = typer.Option(
+        False,
+        "--async",
+        help="Run with async orchestration (independent agent loops, multi-turn conversations)",
+    ),
+    hours: float = typer.Option(
+        8.0,
+        "--hours",
+        help="Simulated hours to run (async mode only)",
+    ),
+    max_steps: int = typer.Option(
+        50,
+        "--max-steps",
+        help="Max decision steps per agent (async mode only)",
+    ),
+    max_turns: int = typer.Option(
+        12,
+        "--max-turns",
+        help="Max turns per conversation before auto-ending (async mode only)",
+    ),
 ) -> None:
     """Run a simulation with the specified scenario."""
+    if async_mode:
+        asyncio.run(
+            _run_async_simulation(
+                scenario=scenario,
+                hours=hours,
+                use_llm=llm,
+                seed=seed,
+                verbose=verbose,
+                memory_strategy=memory,
+                max_steps=max_steps,
+                max_turns=max_turns,
+            )
+        )
+        return
     _validate_run_options(
         ticks=ticks,
         output_format=output,
@@ -587,6 +621,102 @@ async def _run_with_llm_heartbeat(orchestrator: Any, ticks: int) -> Dict[str, An
             flush=True,
         )
     return await task
+
+
+async def _run_async_simulation(
+    scenario: str,
+    hours: float,
+    use_llm: bool,
+    seed: Optional[int],
+    verbose: bool,
+    memory_strategy: str = "bm25",
+    max_steps: int = 50,
+    max_turns: int = 12,
+) -> None:
+    """Run simulation with async orchestration (independent agent loops)."""
+    from miniverse.async_orchestrator import AsyncOrchestrator
+    from miniverse.config import Config
+    from miniverse.scenario_files import load_structured_data_file
+    from miniverse.scenario_runtime import (
+        load_scenario_cognition,
+        load_scenario_rules,
+    )
+
+    _configure_logging_environment(debug=False, verbose=verbose)
+
+    scenario_dir, scenario_name = _resolve_scenario_reference(scenario)
+    scenario_file = _resolve_scenario_file_path(scenario_dir, scenario_name)
+    scenario_data = load_structured_data_file(scenario_file)
+    runtime_config = _extract_runtime_config(scenario_data)
+    world_state, profiles_map = _load_world_and_profiles(scenario_dir, scenario_name)
+
+    rules = load_scenario_rules(
+        scenario_dir,
+        seed=seed,
+        runtime=runtime_config,
+    )
+
+    if use_llm:
+        try:
+            Config.validate()
+        except ValueError as exc:
+            typer.echo(f"Error: {exc}", err=True)
+            typer.echo(
+                "Set LLM_PROVIDER, LLM_MODEL, and API key environment variables.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    cognition_map = load_scenario_cognition(
+        scenario_dir,
+        profiles_map,
+        use_llm=use_llm,
+        runtime=runtime_config,
+    )
+
+    provider = Config.LLM_PROVIDER if use_llm else None
+    model = Config.LLM_MODEL if use_llm else None
+    agent_prompts = _build_agent_prompts(
+        profiles_map=profiles_map,
+        scenario_data=scenario_data,
+    )
+
+    orchestrator = AsyncOrchestrator(
+        world_state=world_state,
+        agents=profiles_map,
+        agent_prompts=agent_prompts,
+        llm_provider=provider,
+        llm_model=model,
+        simulation_rules=rules,
+        agent_cognition=cognition_map,
+        verbose=verbose,
+        max_conversation_turns=max_turns,
+        max_agent_steps=max_steps,
+    )
+
+    # Override memory strategy if requested
+    if memory_strategy == "semantic":
+        from miniverse.memory import SemanticMemoryStrategy
+        orchestrator.memory = SemanticMemoryStrategy(orchestrator.persistence)
+        await orchestrator.memory.initialize()
+    elif memory_strategy == "simple":
+        from miniverse.memory import SimpleMemoryStream
+        orchestrator.memory = SimpleMemoryStream(orchestrator.persistence)
+
+    result = await orchestrator.run(duration_hours=hours)
+
+    # Print conversation transcripts
+    print(f"\n{'=' * 70}")
+    print("CONVERSATION TRANSCRIPTS")
+    print(f"{'=' * 70}")
+    for conv in result.get("conversations", []):
+        print(f"\n--- {conv.mode.upper()} conversation at {conv.location} "
+              f"({conv.turn_count} turns) ---")
+        print(f"Participants: {', '.join(sorted(conv.participants))}")
+        print(conv.transcript())
+        print()
+
+    print(f"\nRun ID: {result['run_id']}")
 
 
 async def _run_simulation(
