@@ -1,6 +1,6 @@
 # Miniverse Roadmap (Future Only)
 
-_Last updated: 2026-02-17_
+_Last updated: 2026-04-25_
 
 This roadmap tracks only upcoming work.
 
@@ -8,15 +8,44 @@ This roadmap tracks only upcoming work.
 
 ## Priority Order
 
-1. Scenario validation and research credibility
-2. Intervention and branching workflows
-3. Scoring and export for analysis
-4. Calibration against real-world data
-5. Claude-guided workflow packaging
+1. Simulation reliability (LLM errors, resume, async orchestration)
+2. Scenario validation and research credibility
+3. Intervention and branching workflows
+4. Scoring and export for analysis
+5. Calibration against real-world data
+6. Claude-guided workflow packaging
 
 ---
 
 ## Now (0-4 weeks)
+
+### 0) Simulation reliability
+
+Three issues identified during biosec async experiments that block useful research runs:
+
+**A) LLM error classification and retry**
+- Distinguish rate limit (429) from timeout from network error — currently all surface as `TimeoutError` after 120s
+- Add retry with backoff for rate limits (tenacity supports this; `retry_if_exception_type(RateLimitError)`)
+- Shorten initial timeout (30s), escalate on retry (60s) — flat 120s hides stalls for no benefit
+- Surface provider error codes in log output so failures are diagnosable
+
+**B) Run resume from checkpoint**
+- Currently: `WorldState` + memories are persisted per tick, but `Scratchpad` (agent plan, plan_index, reflection counters) is not
+- Add `save_scratchpad(run_id, agent_id, tick, state)` / `get_scratchpad(run_id, agent_id, tick)` to persistence protocol
+- Persist scratchpad at end of each tick alongside world state
+- Add `miniverse run --resume <run_id>` CLI flag: loads last WorldState + memories + scratchpad per agent, restarts at `last_tick + 1`
+- This also enables forking (required for intervention API in item 3)
+
+**C) Async orchestrator as default path**
+- Async orchestrator (`async_orchestrator.py`) is built and smoke-tested but not the default
+- Tick orchestrator crashes the whole run when one agent times out
+- Async mode handles per-agent failures gracefully (other agents continue)
+- Evaluate making `--async` the default for LLM runs; keep tick mode for deterministic/fast runs
+
+Success criteria:
+- [ ] Rate limit errors are caught, logged clearly, and retried with backoff
+- [ ] A failed run at tick N can be resumed at tick N+1 with `--resume <run_id>`
+- [ ] Async mode is default for `--llm` runs or clearly documented as the recommended path
 
 ### 1) Social science validation scenarios
 
@@ -50,9 +79,11 @@ Success criteria:
 
 ### 3) Intervention API (counterfactual branching)
 
-- Add simulation fork/checkpoint primitives.
-- Add intervention commands (state/resource/role/policy updates mid-run).
-- Add branch comparison utilities for quantitative deltas.
+Depends on resume/checkpoint work from item 0B — forking is resume at tick `t` with a modified WorldState.
+
+- Fork/checkpoint primitives (built on `--resume` infrastructure from item 0B)
+- Intervention commands (state/resource/role/policy updates mid-run)
+- Branch comparison utilities for quantitative deltas
 
 Success criteria:
 
