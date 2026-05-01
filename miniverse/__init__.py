@@ -37,6 +37,8 @@ from .cognition import (
     PromptLibrary,
     DEFAULT_PROMPTS,
 )
+from .cognition.context_window import ContextWindow
+from .scenario_actions import ScenarioActions
 from .environment import (
     EnvironmentGraph,
     EnvironmentGrid,
@@ -62,6 +64,8 @@ from .schemas import (
     AgentAction,
     OutgoingMessage,
     StepDecision,
+    StepOutput,
+    ActionResult,
     AgentPerception,
     GridVisibility,
     VisibleGridTile,
@@ -111,6 +115,8 @@ __all__ = [
     "AgentAction",
     "OutgoingMessage",
     "StepDecision",
+    "StepOutput",
+    "ActionResult",
     "AgentPerception",
     "GridVisibility",
     "VisibleGridTile",
@@ -120,6 +126,9 @@ __all__ = [
     # Scenario helpers
     "load_scenario",
     "ScenarioLoader",
+    # Context window + scenario actions
+    "ContextWindow",
+    "ScenarioActions",
     # Utilities
     "format_resources_generic",
     # Environment helpers

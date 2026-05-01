@@ -499,6 +499,48 @@ class StepDecision(BaseModel):
     reasoning: str = Field("", description="Why this action was chosen")
 
 
+class StepOutput(BaseModel):
+    """Agent output for a single step in context-window mode.
+
+    All fields are optional. The agent can think only, act only,
+    respond only, or any combination. Replaces StepDecision for
+    agents running with use_context_window=True.
+    """
+
+    think: Optional[str] = Field(
+        None, description="Internal reasoning — chain of thought"
+    )
+    action: Optional[str] = Field(
+        None, description="Tool/action name to execute"
+    )
+    target: Optional[str] = Field(
+        None, description="Target of the action"
+    )
+    parameters: Optional[Dict[str, Union[str, int, float, bool]]] = Field(
+        None, description="Action-specific parameters"
+    )
+    respond: Optional[str] = Field(
+        None, description="Text output — message to someone or general output"
+    )
+    respond_to: Optional[str] = Field(
+        None, description="Recipient agent ID if respond is a directed message"
+    )
+
+
+class ActionResult(BaseModel):
+    """Result returned by scenario action execution.
+
+    Contains content the agent sees in its context window
+    and optional state updates to apply to the world.
+    """
+
+    content: str = Field(..., description="What the agent sees as the action result")
+    state_updates: Optional[Dict[str, Any]] = Field(
+        None, description="Changes to apply to world state"
+    )
+    success: bool = Field(True, description="Whether the action succeeded")
+
+
 class VisibleGridTile(BaseModel):
     """A tile visible to the agent within their local grid view."""
 

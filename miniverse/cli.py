@@ -123,6 +123,11 @@ def run(
         "--max-turns",
         help="Max turns per conversation before auto-ending (async mode only)",
     ),
+    context_window: bool = typer.Option(
+        False,
+        "--context-window",
+        help="Use rolling context window agent loop (async mode only)",
+    ),
 ) -> None:
     """Run a simulation with the specified scenario."""
     if async_mode:
@@ -136,6 +141,7 @@ def run(
                 memory_strategy=memory,
                 max_steps=max_steps,
                 max_turns=max_turns,
+                use_context_window=context_window,
             )
         )
         return
@@ -632,12 +638,14 @@ async def _run_async_simulation(
     memory_strategy: str = "bm25",
     max_steps: int = 50,
     max_turns: int = 12,
+    use_context_window: bool = False,
 ) -> None:
     """Run simulation with async orchestration (independent agent loops)."""
     from miniverse.async_orchestrator import AsyncOrchestrator
     from miniverse.config import Config
     from miniverse.scenario_files import load_structured_data_file
     from miniverse.scenario_runtime import (
+        load_scenario_actions,
         load_scenario_cognition,
         load_scenario_rules,
     )
@@ -674,6 +682,12 @@ async def _run_async_simulation(
         runtime=runtime_config,
     )
 
+    # Load scenario actions (optional — scenarios without actions.py skip this)
+    scenario_actions = load_scenario_actions(
+        scenario_dir,
+        runtime=runtime_config,
+    )
+
     provider = Config.LLM_PROVIDER if use_llm else None
     model = Config.LLM_MODEL if use_llm else None
     agent_prompts = _build_agent_prompts(
@@ -689,9 +703,11 @@ async def _run_async_simulation(
         llm_model=model,
         simulation_rules=rules,
         agent_cognition=cognition_map,
+        scenario_actions=scenario_actions,
         verbose=verbose,
         max_conversation_turns=max_turns,
         max_agent_steps=max_steps,
+        use_context_window=use_context_window,
     )
 
     # Override memory strategy if requested

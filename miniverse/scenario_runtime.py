@@ -1,4 +1,4 @@
-"""Runtime loading helpers for scenario-local rules and cognition."""
+"""Runtime loading helpers for scenario-local rules, cognition, and actions."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from miniverse import AgentCognition, AgentProfile, SimulationRules
+    from miniverse.scenario_actions import ScenarioActions
 
 
 def _load_module(module_path: Path, module_label: str) -> Optional[ModuleType]:
@@ -192,3 +193,63 @@ def load_scenario_cognition(
     for agent_id in profiles:
         cognition_map[agent_id] = build_default_cognition()
     return cognition_map
+
+
+def load_scenario_actions(
+    scenario_dir: Path,
+    *,
+    runtime: Optional[Dict[str, Any]] = None,
+) -> Optional["ScenarioActions"]:
+    """Dynamically load ScenarioActions from scenario-local ``actions.py``.
+
+    Follows the same discovery pattern as :func:`load_scenario_rules`:
+    load the module, scan for a :class:`ScenarioActions` subclass,
+    instantiate with kwargs from the runtime config.
+    """
+    from miniverse.scenario_actions import ScenarioActions
+
+    actions_cfg = _runtime_section(runtime, "actions")
+    module_name = actions_cfg.get("module", "actions.py")
+    actions_path = scenario_dir / str(module_name)
+    if not actions_path.exists():
+        return None
+
+    module = _load_module(actions_path, f"scenario_actions_{scenario_dir.name}")
+    if module is None:
+        return None
+
+    actions_class = None
+    class_name = actions_cfg.get("class")
+    if isinstance(class_name, str):
+        candidate = getattr(module, class_name, None)
+        if (
+            isinstance(candidate, type)
+            and issubclass(candidate, ScenarioActions)
+            and candidate is not ScenarioActions
+        ):
+            actions_class = candidate
+
+    if actions_class is None:
+        for attr_name in dir(module):
+            obj = getattr(module, attr_name)
+            if (
+                isinstance(obj, type)
+                and issubclass(obj, ScenarioActions)
+                and obj is not ScenarioActions
+            ):
+                actions_class = obj
+                break
+
+    if actions_class is None:
+        return None
+
+    kwargs = actions_cfg.get("kwargs", {})
+    if not isinstance(kwargs, dict):
+        kwargs = {}
+
+    for attempt_kwargs in (kwargs, {}):
+        try:
+            return actions_class(**attempt_kwargs)
+        except TypeError:
+            continue
+    return None

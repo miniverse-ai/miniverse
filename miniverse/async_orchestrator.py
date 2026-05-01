@@ -34,13 +34,15 @@ from .cognition import (
     wrap_action_as_step_decision,
 )
 from .cognition.cadence import REFLECTION_LAST_TICK_KEY
+from .cognition.context_window import ContextWindow
 from .cognition.planner import Plan, PlanStep
 from .conversation import ConversationManager, Conversation, Message
 from .logging_utils import colored, Color
 from .memory import MemoryStrategy, BM25MemoryStrategy
 from .perception import build_agent_perception
 from .persistence import PersistenceStrategy, InMemoryPersistence
-from .schemas import AgentAction, AgentMemory, AgentProfile, StepDecision, WorldState
+from .scenario_actions import ScenarioActions
+from .schemas import AgentAction, AgentMemory, AgentProfile, StepDecision, StepOutput, ActionResult, WorldState
 from .simulation_rules import SimulationRules
 
 logger = logging.getLogger(__name__)
@@ -70,10 +72,12 @@ class AsyncOrchestrator:
         persistence: Optional[PersistenceStrategy] = None,
         memory: Optional[MemoryStrategy] = None,
         agent_cognition: Optional[AgentCognitionMap] = None,
+        scenario_actions: Optional[ScenarioActions] = None,
         world_prompt: str = "",
         verbose: bool = True,
         max_conversation_turns: int = 50,
         max_agent_steps: int = 50,
+        use_context_window: bool = False,
     ) -> None:
         self.current_state = world_state
         self.agents = agents
@@ -85,6 +89,8 @@ class AsyncOrchestrator:
         self.verbose = verbose
         self.max_conversation_turns = max_conversation_turns
         self.max_agent_steps = max_agent_steps
+        self.use_context_window = use_context_window
+        self.scenario_actions = scenario_actions
 
         self.persistence = persistence or InMemoryPersistence()
         self.memory = memory or BM25MemoryStrategy(self.persistence)
@@ -114,6 +120,10 @@ class AsyncOrchestrator:
         self._state_lock = asyncio.Lock()
         # Global stop signal
         self._stop = asyncio.Event()
+        # Per-agent context windows (used when use_context_window=True)
+        self._agent_contexts: Dict[str, ContextWindow] = {}
+        # Per-agent pending notifications queue
+        self._agent_notifications: Dict[str, List[Dict[str, str]]] = {}
 
     def _log(self, msg: str) -> None:
         if self.verbose:
@@ -649,7 +659,399 @@ class AsyncOrchestrator:
         return sum(len(conv_info.get("messages", [])) for conv_info in pending)
 
     # ------------------------------------------------------------------
-    # Agent Loop
+    # Context Window Agent Loop (v2)
+    # ------------------------------------------------------------------
+
+    def _build_system_prompt(self, agent_id: str) -> str:
+        """Build the system prompt for an agent's context window."""
+        profile = self.agents[agent_id]
+        agent_prompt = self.agent_prompts.get(agent_id, "")
+
+        parts = []
+
+        # Agent identity
+        identity = []
+        if profile.name:
+            identity.append(f"Name: {profile.name}")
+        if profile.role:
+            identity.append(f"Role: {profile.role}")
+        if profile.personality:
+            identity.append(f"Personality: {profile.personality}")
+        if profile.background:
+            identity.append(f"Background: {profile.background}")
+        if profile.goals:
+            identity.append("Goals: " + "; ".join(profile.goals))
+        if profile.relationships:
+            rels = ", ".join(f"{k}: {v}" for k, v in profile.relationships.items())
+            identity.append(f"Relationships: {rels}")
+        if identity:
+            parts.append("\n".join(identity))
+
+        # Scenario-specific prompt (the persona overlay or agent instructions)
+        if agent_prompt:
+            parts.append(agent_prompt)
+
+        # Available actions
+        action_catalog = []
+        if self.scenario_actions:
+            for act in self.scenario_actions.get_available_actions():
+                action_catalog.append(
+                    f"- {act['name']}: {act.get('description', '')}"
+                )
+        # Built-in actions
+        action_catalog.extend([
+            "- send_message: Send a message to a team member (set respond + respond_to)",
+            "- check_inbox: Read and respond to your pending messages",
+            "- move_to: Move to a different location (specify in target)",
+            "- wait: Hold off and observe",
+            "- do_nothing: Take no action this step",
+        ])
+        parts.append("Available actions:\n" + "\n".join(action_catalog))
+
+        # Response format
+        parts.append(
+            "Each step you see your current perception and history. "
+            "Respond with JSON. All fields are optional — omit any you don't need:\n"
+            '{"think": "your internal reasoning", '
+            '"action": "action_name", '
+            '"target": "target", '
+            '"parameters": {}, '
+            '"respond": "text to say or message to send", '
+            '"respond_to": "recipient_id"}'
+        )
+
+        return "\n\n".join(parts)
+
+    def _build_perception_text(self, agent_id: str) -> str:
+        """Build a human-readable perception string for the context window."""
+        parts = []
+
+        # Location
+        location = self._get_agent_location(agent_id)
+        if location:
+            parts.append(f"Location: {location}")
+
+        # Time
+        if self.clock:
+            parts.append(f"Time: {self.clock.time_str()}")
+
+        # Unread messages
+        unread = self._get_unread_count(agent_id)
+        if unread > 0:
+            parts.append(f"Unread messages: {unread}")
+
+        # Agent's own attributes
+        for agent_status in self.current_state.agents:
+            if agent_status.agent_id == agent_id:
+                for key, stat in agent_status.attributes.items():
+                    label = stat.label or key
+                    unit = f" {stat.unit}" if stat.unit else ""
+                    parts.append(f"{label}: {stat.value}{unit}")
+                break
+
+        # Shared resources
+        if self.simulation_rules:
+            resource_summary = self.simulation_rules.format_resource_summary(
+                self.current_state
+            )
+            if resource_summary:
+                parts.append(resource_summary)
+        else:
+            for key, stat in self.current_state.resources.metrics.items():
+                label = stat.label or key
+                unit = f" {stat.unit}" if stat.unit else ""
+                parts.append(f"{label}: {stat.value}{unit}")
+
+        return "\n".join(parts)
+
+    def _queue_notification(self, agent_id: str, sender: str, content: str) -> None:
+        """Queue a notification for an agent's next step."""
+        if agent_id not in self._agent_notifications:
+            self._agent_notifications[agent_id] = []
+        self._agent_notifications[agent_id].append({
+            "sender": sender, "content": content,
+        })
+
+    def _drain_notifications(self, agent_id: str) -> List[Dict[str, str]]:
+        """Get and clear pending notifications for an agent."""
+        notifications = self._agent_notifications.get(agent_id, [])
+        self._agent_notifications[agent_id] = []
+        return notifications
+
+    async def _run_agent_loop_v2(self, agent_id: str) -> None:
+        """Context-window agent loop.
+
+        Each agent accumulates a rolling history. Each step:
+        1. Inject notifications and perception into context
+        2. Inject semantic memories periodically
+        3. LLM call → StepOutput (think/act/respond, all optional)
+        4. Record output in context
+        5. Process action → get result → add to context
+        6. Route messages
+        """
+        from .llm_utils import call_llm_with_retries
+
+        agent_name = self.agents[agent_id].name
+        self._agent_steps[agent_id] = 0
+        self.conversations.register_agent(agent_id)
+
+        # Initialize context window
+        ctx = ContextWindow()
+        ctx.add_system(self._build_system_prompt(agent_id))
+        ctx.add_perception(0, self._build_perception_text(agent_id))
+
+        # Seed initial memories
+        initial_memories = await self.memory.get_recent_memories(
+            self.run_id, agent_id, limit=10
+        )
+        if initial_memories:
+            ctx.add_memories(0, initial_memories)
+
+        self._agent_contexts[agent_id] = ctx
+
+        self._log(colored(f"  Agent {agent_name} starting loop (context window)", Color.GREEN))
+
+        while not self._stop.is_set():
+            step = self._agent_steps[agent_id]
+            if step >= self.max_agent_steps:
+                self._log(colored(
+                    f"  [{agent_name}] Reached max steps ({self.max_agent_steps})",
+                    Color.YELLOW,
+                ))
+                break
+
+            try:
+                # ── 1. Inject events since last step ──
+                for notif in self._drain_notifications(agent_id):
+                    ctx.add_notification(step, notif["sender"], notif["content"])
+
+                # Inject pending conversation messages as notifications
+                pending = self.conversations.get_pending(agent_id)
+                for conv_info in pending:
+                    conv_id = conv_info["conversation_id"]
+                    conv = self.conversations._conversations.get(conv_id)
+                    if not conv or not conv.is_active:
+                        continue
+                    for msg in conv_info.get("messages", []):
+                        sender_name = self.agents.get(msg.sender, AgentProfile(
+                            agent_id=msg.sender, name=msg.sender,
+                            role="", background="", personality="",
+                            skills={}, goals=[], relationships={},
+                        )).name
+                        ctx.add_notification(step, sender_name, msg.content)
+                    self.conversations.acknowledge(agent_id, conv_id)
+
+                # Update perception (only on first step or every few steps to save context space)
+                if step == 0 or step % 3 == 0:
+                    ctx.add_perception(step, self._build_perception_text(agent_id))
+
+                # ── 2. Inject semantic memories periodically ──
+                if step > 0 and step % 3 == 0:
+                    query = ctx.get_recent_text(last_n=3)
+                    if query.strip():
+                        relevant = await self.memory.get_relevant_memories(
+                            self.run_id, agent_id, query=query, limit=5
+                        )
+                        if relevant:
+                            ctx.add_memories(step, relevant)
+
+                # ── 3. LLM call ──
+                system_prompt, user_prompt = ctx.to_prompt()
+
+                step_output = await call_llm_with_retries(
+                    system_prompt=system_prompt,
+                    user_prompt=user_prompt,
+                    llm_provider=self.llm_provider,
+                    llm_model=self.llm_model,
+                    response_model=StepOutput,
+                )
+
+                # ── 4. Record output in context ──
+                ctx.add_agent_output(step, step_output)
+
+                # ── 5. Process think ──
+                if step_output.think:
+                    self._log(colored(
+                        f"  [{agent_name}] thinks: {step_output.think}",
+                        Color.CYAN,
+                    ))
+                    await self.memory.add_memory(
+                        run_id=self.run_id,
+                        agent_id=agent_id,
+                        tick=step,
+                        memory_type="reflection",
+                        content=step_output.think,
+                        importance=6,
+                        tags=["think"],
+                    )
+
+                # ── 6. Process action ──
+                if step_output.action:
+                    action_name = step_output.action
+                    self._log(colored(
+                        f"  [{agent_name}] action: {action_name}"
+                        + (f" target={step_output.target}" if step_output.target else ""),
+                        Color.GREEN,
+                    ))
+
+                    # Try scenario actions first
+                    result = None
+                    if self.scenario_actions:
+                        result = await self.scenario_actions.execute(
+                            action_name,
+                            step_output.target,
+                            step_output.parameters,
+                            agent_id,
+                        )
+
+                    if result:
+                        ctx.add_action_result(step, result)
+                        self._log(colored(
+                            f"    result: {result.content[:200]}{'...' if len(result.content) > 200 else ''}",
+                            Color.CYAN,
+                        ))
+                        if result.state_updates:
+                            async with self._state_lock:
+                                for key, value in result.state_updates.items():
+                                    self._record_event(
+                                        "state_update", agent_id, f"{key}={value}",
+                                    )
+
+                    # Handle built-in actions
+                    if action_name == "move_to" and step_output.target:
+                        await self._move_agent(agent_id, step_output.target)
+                        if self.clock:
+                            self.clock.advance(get_action_duration("move_to"))
+
+                    elif action_name == "check_inbox":
+                        await self._process_inbox(agent_id)
+                        if self.clock:
+                            self.clock.advance_minutes(5)
+
+                    elif action_name in ("wait", "do_nothing"):
+                        if self.clock:
+                            self.clock.advance(get_action_duration(action_name))
+
+                    else:
+                        # Scenario action or generic — advance clock
+                        if self.clock:
+                            self.clock.advance(get_action_duration("work"))
+
+                    # Store action as memory
+                    action_content = f"I chose to {action_name}"
+                    if step_output.target:
+                        action_content += f" targeting {step_output.target}"
+                    await self.memory.add_memory(
+                        run_id=self.run_id,
+                        agent_id=agent_id,
+                        tick=step,
+                        memory_type="action",
+                        content=action_content,
+                        importance=5,
+                        tags=["action", action_name],
+                    )
+
+                    self._record_event(
+                        "action", agent_id, action_name,
+                        target=step_output.target,
+                    )
+
+                # ── 7. Process respond ──
+                if step_output.respond:
+                    if step_output.respond_to:
+                        # Directed message — route through conversation manager
+                        location = self._get_agent_location(agent_id)
+                        timestamp = self.clock.now if self.clock else datetime.now()
+                        if location:
+                            conv = self.conversations.start_conversation(
+                                initiator=agent_id,
+                                location=location,
+                                message=step_output.respond,
+                                timestamp=timestamp,
+                                mode="private",
+                                target=step_output.respond_to,
+                            )
+                            if conv and conv.messages:
+                                await self._store_conversation_memory(conv, conv.messages[-1])
+
+                            # Queue notification for recipient
+                            self._queue_notification(
+                                step_output.respond_to,
+                                agent_name,
+                                step_output.respond,
+                            )
+
+                        self._log(colored(
+                            f"    [{agent_name}] messaged {step_output.respond_to}: "
+                            f"{step_output.respond}",
+                            Color.CYAN,
+                        ))
+                    else:
+                        # General output — log it
+                        self._log(colored(
+                            f"    [{agent_name}] said: {step_output.respond}",
+                            Color.CYAN,
+                        ))
+
+                self._agent_steps[agent_id] = step + 1
+                self._agent_rate_limit_hits.pop(agent_id, None)
+
+                await asyncio.sleep(0)
+
+            except Exception as exc:
+                exc_str = str(exc).lower()
+
+                is_billing = any(s in exc_str for s in [
+                    "insufficient_quota", "billing_hard_limit",
+                    "exceeded your current quota", "billing",
+                    "you exceeded", "account",
+                ])
+                if is_billing:
+                    self._log(colored(
+                        f"  [{agent_name}] BILLING ERROR — credits exhausted. "
+                        f"Stopping simulation. Error: {exc}",
+                        Color.YELLOW,
+                    ))
+                    self._stop.set()
+                    break
+
+                is_rate_limit = "429" in exc_str or "rate_limit" in exc_str
+
+                if is_rate_limit:
+                    hits = self._agent_rate_limit_hits.get(agent_id, 0) + 1
+                    self._agent_rate_limit_hits[agent_id] = hits
+
+                    if hits >= 5:
+                        self._log(colored(
+                            f"  [{agent_name}] 5 consecutive rate limits — aborting. "
+                            f"Error: {exc}",
+                            Color.YELLOW,
+                        ))
+                        break
+
+                    backoff = min(2 ** (hits - 1), 30)
+                    self._log(colored(
+                        f"  [{agent_name}] Rate limited at step {step} "
+                        f"({hits}/5), backing off {backoff}s",
+                        Color.YELLOW,
+                    ))
+                    await asyncio.sleep(backoff)
+                else:
+                    self._log(colored(
+                        f"  [{agent_name}] ERROR at step {step}: {exc}",
+                        Color.RED if hasattr(Color, 'RED') else Color.YELLOW,
+                    ))
+                    logger.exception("Agent %s failed at step %d", agent_id, step)
+                    self._agent_steps[agent_id] = step + 1
+                    await asyncio.sleep(0.1)
+
+        self._log(colored(
+            f"  Agent {agent_name} finished ({self._agent_steps[agent_id]} steps)",
+            Color.GREEN,
+        ))
+
+    # ------------------------------------------------------------------
+    # Agent Loop (v1 — legacy, single-shot)
     # ------------------------------------------------------------------
 
     async def _run_agent_loop(self, agent_id: str) -> None:
@@ -988,9 +1390,10 @@ class AsyncOrchestrator:
             self._log(f"{'=' * 70}\n")
 
             # Launch all agent loops concurrently
+            loop_fn = self._run_agent_loop_v2 if self.use_context_window else self._run_agent_loop
             agent_tasks = {
                 agent_id: asyncio.create_task(
-                    self._run_agent_loop(agent_id),
+                    loop_fn(agent_id),
                     name=f"agent-{agent_id}",
                 )
                 for agent_id in self.agents
