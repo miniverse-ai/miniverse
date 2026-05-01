@@ -119,7 +119,7 @@ def run(
         help="Max decision steps per agent (async mode only)",
     ),
     max_turns: int = typer.Option(
-        12,
+        50,
         "--max-turns",
         help="Max turns per conversation before auto-ending (async mode only)",
     ),

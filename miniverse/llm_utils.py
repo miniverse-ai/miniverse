@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Sequence, TypeVar
 
@@ -132,7 +133,20 @@ async def call_llm_with_retries(
     # Define LLM call using Mirascope decorator. The decorator handles provider-specific
     # API calls, response parsing, and schema validation. response_model triggers Pydantic
     # validation on LLM output - raises ValidationError if output doesn't match schema.
-    @llm.call(provider=llm_provider, model=llm_model, response_model=response_model)
+    # Use json_mode only for litellm (OpenRouter) which doesn't support native tool calling
+    # on most models. OpenAI and Anthropic work better with native structured output.
+    use_json_mode = llm_provider == "litellm"
+
+    # Temperature: env var override, else 0.7 (persona simulation standard per PersonaLLM)
+    temperature = float(os.getenv("LLM_TEMPERATURE", "0.7"))
+
+    @llm.call(
+        provider=llm_provider,
+        model=llm_model,
+        response_model=response_model,
+        json_mode=use_json_mode,
+        call_params={"temperature": temperature},
+    )
     async def _invoke(prompt: str) -> str:
         return prompt
 

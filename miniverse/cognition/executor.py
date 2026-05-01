@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from miniverse.schemas import AgentAction, AgentPerception
+from miniverse.schemas import AgentAction, AgentPerception, StepDecision, OutgoingMessage
 from miniverse.llm_calls import get_agent_action
 
 from .planner import Plan, PlanStep
@@ -43,9 +43,69 @@ class Executor(Protocol):
 
         ...
 
+    async def choose_step(
+        self,
+        agent_id: str,
+        perception: AgentPerception,
+        scratchpad: "Scratchpad",
+        *,
+        plan: "Plan",
+        plan_step: "PlanStep | None",
+        context: "PromptContext",
+    ) -> StepDecision:
+        """Select a composite step (communication + action) for the current tick.
+
+        Optional. Executors that don't implement this will have choose_action()
+        called instead, with the result wrapped via wrap_action_as_step_decision().
+        """
+
+        raise NotImplementedError
+
     def uses_llm(self) -> bool:
         """Return True if this executor performs an LLM call for action selection."""
         ...
+
+
+def wrap_action_as_step_decision(action: AgentAction) -> StepDecision:
+    """Convert an old-style AgentAction into a StepDecision for unified processing.
+
+    Maps talk/message action types into the communication fields and converts
+    the action itself to do_nothing (since the communication is now separate).
+    Non-communication actions pass through as-is.
+    """
+    new_messages: list[OutgoingMessage] = []
+    public_speech: str | None = None
+    action_type = action.action_type
+    target = action.target
+    parameters = action.parameters
+    reasoning = action.reasoning
+
+    if action.action_type in ("talk", "communicate") and action.communication:
+        # Public speech — extract the message content
+        public_speech = action.communication.get("message")
+        action_type = "do_nothing"
+        target = None
+        parameters = None
+    elif action.action_type == "message" and action.communication:
+        # Private message — convert to OutgoingMessage
+        recipient = action.communication.get("to", "")
+        msg_content = action.communication.get("message", "")
+        if recipient and msg_content:
+            new_messages.append(OutgoingMessage(to=recipient, message=msg_content))
+        action_type = "do_nothing"
+        target = None
+        parameters = None
+
+    return StepDecision(
+        agent_id=action.agent_id,
+        tick=action.tick,
+        new_messages=new_messages,
+        public_speech=public_speech,
+        action_type=action_type,
+        target=target,
+        parameters=parameters,
+        reasoning=reasoning,
+    )
 
 
 class RuleBasedExecutor:

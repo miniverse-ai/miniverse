@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field
 
 from miniverse.llm_calls import call_llm_with_retries
-from miniverse.schemas import AgentAction, AgentPerception
+from miniverse.schemas import AgentAction, AgentPerception, StepDecision
 
 from .context import PromptContext
 from .executor import Executor
@@ -415,12 +415,12 @@ class LLMExecutor(Executor):
                 print(f"Target: {action.target}")
             if action.parameters:
                 print(f"Parameters: {action.parameters}")
-            print(f"Reasoning: {action.reasoning[:200]}..." if len(action.reasoning) > 200 else f"Reasoning: {action.reasoning}")
+            print(f"Reasoning: {action.reasoning}")
             if action.communication:
                 print(f"Communication:")
                 print(f"  To: {action.communication.get('to', 'N/A')}")
                 msg = action.communication.get('message', '')
-                print(f"  Message: {msg[:150]}..." if len(msg) > 150 else f"  Message: {msg}")
+                print(f"  Message: {msg}")
             print(f"{'='*80}\n")
         elif verbose_llm:
             target = f" target={action.target}" if action.target else ""
@@ -443,6 +443,92 @@ class LLMExecutor(Executor):
                     )
 
         return action
+
+    async def choose_step(
+        self,
+        agent_id: str,
+        perception: AgentPerception,
+        scratchpad: Scratchpad,
+        *,
+        plan: Plan,
+        plan_step: PlanStep | None,
+        context: PromptContext,
+    ) -> StepDecision:
+        """Select a composite step (communication + action) via LLM call.
+
+        Same pipeline as choose_action but returns StepDecision instead of
+        AgentAction — the LLM outputs messages, public speech, and an action
+        in a single structured response.
+        """
+        provider = context.extra.get("llm_provider")
+        model = context.extra.get("llm_model")
+
+        if not provider or not model:
+            raise ValueError(
+                f"LLMExecutor requires LLM configuration (agent: {agent_id}). "
+                f"Set LLM_PROVIDER and LLM_MODEL environment variables."
+            )
+
+        if self.template is not None:
+            template = self.template
+        else:
+            name = self.template_name or "default"
+            library = self.prompt_library or context.extra.get("prompt_library") or DEFAULT_PROMPTS
+            try:
+                template = library.get(name)
+            except KeyError:
+                template = DEFAULT_PROMPTS.get("default")
+
+        context.extra.setdefault("available_actions", self.available_actions)
+        rendered = render_prompt(template, context, include_default=False)
+
+        import os
+        debug_llm = os.getenv('DEBUG_LLM', '').lower() in ('1', 'true', 'yes')
+        verbose_llm = os.getenv("MINIVERSE_VERBOSE", "").lower() in ("1", "true", "yes")
+        if debug_llm:
+            print(f"\n{'='*80}")
+            print(f"[LLM EXECUTOR choose_step] Agent: {agent_id}")
+            print(f"{'='*80}")
+            print(f"\n[SYSTEM PROMPT]")
+            print(f"{'-'*80}")
+            print(rendered.system)
+            print(f"\n[USER PROMPT]")
+            print(f"{'-'*80}")
+            print(rendered.user)
+            print(f"{'='*80}\n")
+
+        step = await call_llm_with_retries(
+            system_prompt=rendered.system,
+            user_prompt=rendered.user,
+            llm_provider=provider,
+            llm_model=model,
+            response_model=StepDecision,
+        )
+
+        if debug_llm:
+            print(f"\n[LLM RESPONSE — StepDecision]")
+            print(f"{'-'*80}")
+            print(f"Action: {step.action_type}")
+            if step.target:
+                print(f"Target: {step.target}")
+            if step.new_messages:
+                for m in step.new_messages:
+                    print(f"Message to {m.to}: {m.message}")
+            if step.public_speech:
+                print(f"Public speech: {step.public_speech}")
+            print(f"Reasoning: {step.reasoning}")
+            print(f"{'='*80}\n")
+        elif verbose_llm:
+            target = f" target={step.target}" if step.target else ""
+            print(
+                _wrap_verbose_line(
+                    f"[LLM Executor] {agent_id}: {step.action_type}{target}",
+                    prefix="    ",
+                    continuation="      ",
+                )
+            )
+
+        return step
 
     def uses_llm(self) -> bool:
         return True

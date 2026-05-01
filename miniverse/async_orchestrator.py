@@ -31,14 +31,16 @@ from .cognition import (
     AgentCognitionMap,
     build_default_cognition,
     build_prompt_context,
+    wrap_action_as_step_decision,
 )
+from .cognition.cadence import REFLECTION_LAST_TICK_KEY
 from .cognition.planner import Plan, PlanStep
 from .conversation import ConversationManager, Conversation, Message
 from .logging_utils import colored, Color
 from .memory import MemoryStrategy, BM25MemoryStrategy
 from .perception import build_agent_perception
 from .persistence import PersistenceStrategy, InMemoryPersistence
-from .schemas import AgentAction, AgentMemory, AgentProfile, WorldState
+from .schemas import AgentAction, AgentMemory, AgentProfile, StepDecision, WorldState
 from .simulation_rules import SimulationRules
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,7 @@ class AsyncOrchestrator:
         agent_cognition: Optional[AgentCognitionMap] = None,
         world_prompt: str = "",
         verbose: bool = True,
-        max_conversation_turns: int = 12,
+        max_conversation_turns: int = 50,
         max_agent_steps: int = 50,
     ) -> None:
         self.current_state = world_state
@@ -106,6 +108,8 @@ class AsyncOrchestrator:
         self._events: List[Dict[str, Any]] = []
         # Per-agent step counter
         self._agent_steps: Dict[str, int] = {}
+        # Per-agent rate limit hit counter (for exponential backoff)
+        self._agent_rate_limit_hits: Dict[str, int] = {}
         # Lock for world state mutations
         self._state_lock = asyncio.Lock()
         # Global stop signal
@@ -247,6 +251,9 @@ class AsyncOrchestrator:
                 agent_id, perception, self.current_state
             )
 
+        # Inject unread message count so agent can decide when to check inbox
+        perception.unread_message_count = self._get_unread_count(agent_id)
+
         # Build prompt context
         plan_state = {}
         if isinstance(existing_plan, Plan):
@@ -327,6 +334,77 @@ class AsyncOrchestrator:
         action.tick = self._agent_steps.get(agent_id, 0)
 
         return action
+
+    async def _agent_decide_step(self, agent_id: str) -> StepDecision:
+        """Have an agent decide its next step (communication + action).
+
+        Tries executor.choose_step() first. Falls back to choose_action()
+        + wrap_action_as_step_decision() for backward compatibility with
+        executors that only implement choose_action.
+        """
+        cognition = self.agent_cognition[agent_id]
+        perception, context, memories = await self._build_agent_context(agent_id)
+
+        # Planning (if due)
+        if cognition.planner:
+            existing_plan = None
+            if cognition.scratchpad:
+                existing_plan = cognition.scratchpad.state.get("plan")
+            if not isinstance(existing_plan, Plan) or not existing_plan.steps:
+                plan = await cognition.planner.generate_plan(
+                    agent_id,
+                    cognition.scratchpad,
+                    world_context=None,
+                    context=context,
+                )
+                if cognition.scratchpad:
+                    cognition.scratchpad.state["plan"] = plan
+                    cognition.scratchpad.state["plan_index"] = 0
+                self._log(colored(
+                    f"  [{self.agents[agent_id].name}] Plan: {len(plan.steps)} steps",
+                    Color.CYAN,
+                ))
+
+        # Get current plan state
+        plan = Plan(steps=[])
+        plan_step = None
+        if cognition.scratchpad:
+            p = cognition.scratchpad.state.get("plan")
+            if isinstance(p, Plan):
+                plan = p
+                idx = cognition.scratchpad.state.get("plan_index", 0)
+                if plan.steps:
+                    idx = min(idx, len(plan.steps) - 1)
+                    plan_step = plan.steps[idx]
+
+        # Try choose_step first, fall back to choose_action + wrapper
+        try:
+            step_decision = await cognition.executor.choose_step(
+                agent_id,
+                perception,
+                cognition.scratchpad,
+                plan=plan,
+                plan_step=plan_step,
+                context=context,
+            )
+        except NotImplementedError:
+            # Executor doesn't support choose_step — use legacy path
+            action = await cognition.executor.choose_action(
+                agent_id,
+                perception,
+                cognition.scratchpad,
+                plan=plan,
+                plan_step=plan_step,
+                context=context,
+            )
+            action.agent_id = agent_id
+            action.tick = self._agent_steps.get(agent_id, 0)
+            step_decision = wrap_action_as_step_decision(action)
+
+        step_decision.agent_id = agent_id
+        step_decision.tick = self._agent_steps.get(agent_id, 0)
+
+        return step_decision
 
     async def _agent_respond_to_conversation(
         self,
@@ -488,13 +566,99 @@ class AsyncOrchestrator:
             )
 
     # ------------------------------------------------------------------
+    # Inbox Processing (agent-initiated)
+    # ------------------------------------------------------------------
+
+    async def _process_inbox(self, agent_id: str) -> None:
+        """Process all pending messages when agent chooses check_inbox.
+
+        Reads and responds to every pending conversation. This was
+        previously forced at the start of every step (Phase A); now the
+        agent decides when to check.
+        """
+        agent_name = self.agents[agent_id].name
+        pending = self.conversations.get_pending(agent_id)
+
+        if not pending:
+            self._log(colored(
+                f"  [{agent_name}] checked inbox — no unread messages",
+                Color.CYAN,
+            ))
+            return
+
+        self._log(colored(
+            f"  [{agent_name}] checked inbox — {len(pending)} conversation(s)",
+            Color.CYAN,
+        ))
+
+        for conv_info in pending:
+            conv_id = conv_info["conversation_id"]
+            conv = self.conversations._conversations.get(conv_id)
+            if not conv or not conv.is_active:
+                continue
+
+            msgs = conv_info["messages"]
+            response = await self._agent_respond_to_conversation(
+                agent_id, conv, msgs,
+            )
+
+            self.conversations.acknowledge(agent_id, conv_id)
+
+            if response:
+                msg = self.conversations.send_message(
+                    sender=agent_id,
+                    conversation_id=conv_id,
+                    content=response,
+                    timestamp=self.clock.now if self.clock else datetime.now(),
+                    addressed_to=msgs[-1].sender if len(conv.participants) == 2 else None,
+                )
+                await self._store_conversation_memory(conv, msg)
+
+                self._record_event(
+                    "conversation_response", agent_id, response,
+                    conversation_id=conv_id, mode=conv.mode,
+                )
+                self._log(colored(
+                    f"    [{agent_name}] replied to {msgs[-1].sender}: "
+                    f"{response}",
+                    Color.CYAN,
+                ))
+
+                if self.clock:
+                    self.clock.advance_minutes(2)
+            else:
+                self.conversations.leave_conversation(agent_id, conv_id)
+                self._log(colored(
+                    f"    [{agent_name}] left conversation",
+                    Color.YELLOW,
+                ))
+
+            # Check turn limit
+            if conv and conv.turn_count >= self.max_conversation_turns:
+                self._log(colored(
+                    f"    Conversation at {conv.location} reached turn limit "
+                    f"({self.max_conversation_turns})",
+                    Color.YELLOW,
+                ))
+                for p in list(conv.participants):
+                    self.conversations.leave_conversation(p, conv_id)
+
+    def _get_unread_count(self, agent_id: str) -> int:
+        """Count pending unread messages for an agent."""
+        pending = self.conversations.get_pending(agent_id)
+        return sum(len(conv_info.get("messages", [])) for conv_info in pending)
+
+    # ------------------------------------------------------------------
     # Agent Loop
     # ------------------------------------------------------------------
 
     async def _run_agent_loop(self, agent_id: str) -> None:
         """Independent async loop for a single agent.
 
-        Perceive → check for conversations → decide → act → repeat.
+        Each step the agent decides what to do — including whether to check
+        its inbox. No forced inbox processing; the agent sees an unread
+        count in its perception and chooses check_inbox when it wants to
+        read messages.
         """
         agent_name = self.agents[agent_id].name
         self._agent_steps[agent_id] = 0
@@ -512,131 +676,222 @@ class AsyncOrchestrator:
                 break
 
             try:
-                # Check for pending conversation messages
-                pending = self.conversations.get_pending(agent_id)
+                # ── Decide step (communication + action) ──
+                step_decision = await self._agent_decide_step(agent_id)
 
-                if pending:
-                    # Respond to conversations
-                    for conv_info in pending:
-                        conv_id = conv_info["conversation_id"]
-                        conv = self.conversations._conversations.get(conv_id)
-                        if not conv or not conv.is_active:
-                            continue
+                # B1: Process new private messages from StepDecision
+                location = self._get_agent_location(agent_id)
+                timestamp = self.clock.now if self.clock else datetime.now()
 
-                        msgs = conv_info["messages"]
-                        response = await self._agent_respond_to_conversation(
-                            agent_id, conv, msgs,
+                for outgoing in step_decision.new_messages:
+                    if location:
+                        conv = self.conversations.start_conversation(
+                            initiator=agent_id,
+                            location=location,
+                            message=outgoing.message,
+                            timestamp=timestamp,
+                            mode="private",
+                            target=outgoing.to,
                         )
-
-                        self.conversations.acknowledge(agent_id, conv_id)
-
-                        if response:
-                            msg = self.conversations.send_message(
-                                sender=agent_id,
-                                conversation_id=conv_id,
-                                content=response,
-                                timestamp=self.clock.now if self.clock else datetime.now(),
-                                addressed_to=msgs[-1].sender if len(conv.participants) == 2 else None,
-                            )
-                            await self._store_conversation_memory(conv, msg)
-
-                            self._record_event(
-                                "conversation_response", agent_id, response,
-                                conversation_id=conv_id, mode=conv.mode,
-                            )
-                            self._log(colored(
-                                f"  [{agent_name}] responds in conversation: "
-                                f"{response[:100]}{'...' if len(response) > 100 else ''}",
-                                Color.CYAN,
-                            ))
-
-                            # Advance clock slightly for conversation turn
-                            if self.clock:
-                                self.clock.advance_minutes(2)
-                        else:
-                            # Agent chose to end conversation
-                            self.conversations.leave_conversation(agent_id, conv_id)
-                            self._log(colored(
-                                f"  [{agent_name}] left conversation",
-                                Color.YELLOW,
-                            ))
-
-                        # Check turn limit
-                        if conv and conv.turn_count >= self.max_conversation_turns:
-                            self._log(colored(
-                                f"  Conversation at {conv.location} reached turn limit "
-                                f"({self.max_conversation_turns})",
-                                Color.YELLOW,
-                            ))
-                            for p in list(conv.participants):
-                                self.conversations.leave_conversation(p, conv_id)
-
-                else:
-                    # No pending conversations — decide freely
-                    action = await self._agent_decide_action(agent_id)
-
-                    self._log(colored(
-                        f"  [{agent_name}] action: {action.action_type}"
-                        + (f" target={action.target}" if action.target else ""),
-                        Color.GREEN,
-                    ))
-                    if action.reasoning:
+                        if conv and conv.messages:
+                            await self._store_conversation_memory(conv, conv.messages[-1])
                         self._log(colored(
-                            f"    reason: {action.reasoning[:120]}"
-                            f"{'...' if len(action.reasoning) > 120 else ''}",
+                            f"    [{agent_name}] privately messaged {outgoing.to}: "
+                            f"{outgoing.message}",
                             Color.CYAN,
                         ))
 
-                    # Process action
-                    if action.action_type == "move_to" and action.target:
-                        await self._move_agent(agent_id, action.target)
-                        if self.clock:
-                            self.clock.advance(get_action_duration("move_to"))
-
-                    elif action.action_type in ("talk", "communicate", "message"):
-                        await self._handle_communication(agent_id, action)
-                        if self.clock:
-                            self.clock.advance(get_action_duration("talk"))
-
-                    elif action.action_type == "do_nothing":
-                        if self.clock:
-                            self.clock.advance(get_action_duration("do_nothing"))
-
-                    else:
-                        # Work, investigate, etc.
-                        activity = f"{action.action_type}: {action.reasoning[:60]}" if action.reasoning else action.action_type
-                        await self._update_agent_activity(agent_id, activity)
-                        if self.clock:
-                            self.clock.advance(get_action_duration(action.action_type))
-
-                    await self._store_action_memory(agent_id, action)
-                    self._record_event(
-                        "action", agent_id, action.action_type,
-                        target=action.target, reasoning=action.reasoning,
+                # B2: Process public speech from StepDecision
+                if step_decision.public_speech and location:
+                    agents_here = set(self._get_agents_at_location(location))
+                    conv = self.conversations.start_conversation(
+                        initiator=agent_id,
+                        location=location,
+                        message=step_decision.public_speech,
+                        timestamp=timestamp,
+                        mode="public",
+                        participants=agents_here,
                     )
+                    if conv and conv.messages:
+                        await self._store_conversation_memory(conv, conv.messages[-1])
+                    self._log(colored(
+                        f"    [{agent_name}] said aloud: "
+                        f"\"{step_decision.public_speech}\"",
+                        Color.CYAN,
+                    ))
 
-                    # Advance plan
-                    cognition = self.agent_cognition[agent_id]
-                    if cognition.scratchpad:
-                        plan = cognition.scratchpad.state.get("plan")
-                        if isinstance(plan, Plan) and plan.steps:
-                            idx = cognition.scratchpad.state.get("plan_index", 0)
-                            cognition.scratchpad.state["plan_index"] = idx + 1
+                # B3: Process action
+                action_type = step_decision.action_type
+                self._log(colored(
+                    f"  [{agent_name}] action: {action_type}"
+                    + (f" target={step_decision.target}" if step_decision.target else ""),
+                    Color.GREEN,
+                ))
+                if step_decision.reasoning:
+                    self._log(colored(
+                        f"    reason: {step_decision.reasoning}",
+                        Color.CYAN,
+                    ))
+
+                if action_type == "move_to" and step_decision.target:
+                    await self._move_agent(agent_id, step_decision.target)
+                    if self.clock:
+                        self.clock.advance(get_action_duration("move_to"))
+
+                elif action_type in ("talk", "communicate", "message"):
+                    # Legacy fallback: if an old executor returns talk/message
+                    # via the wrapper, route through _handle_communication
+                    legacy_action = AgentAction(
+                        agent_id=agent_id,
+                        tick=step,
+                        action_type=action_type,
+                        target=step_decision.target,
+                        parameters=step_decision.parameters,
+                        reasoning=step_decision.reasoning,
+                        communication={"to": step_decision.target or "", "message": step_decision.reasoning},
+                    )
+                    await self._handle_communication(agent_id, legacy_action)
+                    if self.clock:
+                        self.clock.advance(get_action_duration("talk"))
+
+                elif action_type == "check_inbox":
+                    await self._process_inbox(agent_id)
+                    if self.clock:
+                        self.clock.advance_minutes(5)
+
+                elif action_type == "do_nothing":
+                    if self.clock:
+                        self.clock.advance(get_action_duration("do_nothing"))
+
+                else:
+                    # work, investigate, meet, wait, etc.
+                    activity = (
+                        f"{action_type}: {step_decision.reasoning}"
+                        if step_decision.reasoning else action_type
+                    )
+                    await self._update_agent_activity(agent_id, activity)
+                    if self.clock:
+                        self.clock.advance(get_action_duration(action_type))
+
+                # Store action as memory
+                action_for_memory = AgentAction(
+                    agent_id=agent_id,
+                    tick=step,
+                    action_type=action_type,
+                    target=step_decision.target,
+                    parameters=step_decision.parameters,
+                    reasoning=step_decision.reasoning,
+                )
+                await self._store_action_memory(agent_id, action_for_memory)
+                self._record_event(
+                    "action", agent_id, action_type,
+                    target=step_decision.target, reasoning=step_decision.reasoning,
+                )
+
+                # Advance plan
+                cognition = self.agent_cognition[agent_id]
+                if cognition.scratchpad:
+                    plan = cognition.scratchpad.state.get("plan")
+                    if isinstance(plan, Plan) and plan.steps:
+                        idx = cognition.scratchpad.state.get("plan_index", 0)
+                        cognition.scratchpad.state["plan_index"] = idx + 1
+
+                # Reflection (if due per cadence)
+                if cognition.reflection and cognition.scratchpad:
+                    last_reflect = cognition.scratchpad.state.get(REFLECTION_LAST_TICK_KEY)
+                    recent_mems = await self.persistence.get_recent_memories(
+                        self.run_id, agent_id, limit=10
+                    )
+                    # Calculate accumulated importance since last reflection
+                    accumulated = sum(
+                        m.importance for m in recent_mems
+                        if last_reflect is None or m.tick > last_reflect
+                    )
+                    if cognition.cadence.reflection.should_reflect(
+                        tick=step,
+                        last_run_tick=last_reflect,
+                        new_memories=len(recent_mems),
+                        accumulated_importance=accumulated,
+                    ):
+                        perception_r, context_r, _ = await self._build_agent_context(agent_id)
+                        reflections = await cognition.reflection.maybe_reflect(
+                            agent_id,
+                            cognition.scratchpad,
+                            recent_mems,
+                            trigger_context={"tick": step, "new_memories": len(recent_mems)},
+                            context=context_r,
+                        )
+                        for refl in reflections:
+                            await self.memory.add_memory(
+                                run_id=self.run_id,
+                                agent_id=agent_id,
+                                tick=step,
+                                memory_type="reflection",
+                                content=refl.content,
+                                importance=refl.importance,
+                                tags=["reflection"],
+                            )
+                            self._log(colored(
+                                f"    [{agent_name}] reflected: {refl.content}",
+                                Color.CYAN,
+                            ))
+                        cognition.scratchpad.state[REFLECTION_LAST_TICK_KEY] = step
 
                 self._agent_steps[agent_id] = step + 1
+                # Reset rate limit backoff on success
+                self._agent_rate_limit_hits.pop(agent_id, None)
 
                 # Brief yield to let other agents run
                 await asyncio.sleep(0)
 
             except Exception as exc:
-                self._log(colored(
-                    f"  [{agent_name}] ERROR at step {step}: {exc}",
-                    Color.RED if hasattr(Color, 'RED') else Color.YELLOW,
-                ))
-                logger.exception("Agent %s failed at step %d", agent_id, step)
-                # Continue — don't crash the whole simulation for one agent failure
-                self._agent_steps[agent_id] = step + 1
-                await asyncio.sleep(0.1)
+                exc_str = str(exc).lower()
+
+                # Detect billing/credit exhaustion — abort immediately
+                is_billing = any(s in exc_str for s in [
+                    "insufficient_quota", "billing_hard_limit",
+                    "exceeded your current quota", "billing",
+                    "you exceeded", "account",
+                ])
+                if is_billing:
+                    self._log(colored(
+                        f"  [{agent_name}] BILLING ERROR — credits exhausted. "
+                        f"Stopping simulation. Error: {exc}",
+                        Color.YELLOW,
+                    ))
+                    self._stop.set()  # Stop ALL agents
+                    break
+
+                is_rate_limit = "429" in exc_str or "rate_limit" in exc_str
+
+                if is_rate_limit:
+                    hits = self._agent_rate_limit_hits.get(agent_id, 0) + 1
+                    self._agent_rate_limit_hits[agent_id] = hits
+
+                    # After 5 consecutive failures, abort this agent
+                    if hits >= 5:
+                        self._log(colored(
+                            f"  [{agent_name}] 5 consecutive rate limits — aborting. "
+                            f"May be out of credits. Error: {exc}",
+                            Color.YELLOW,
+                        ))
+                        break
+
+                    backoff = min(2 ** (hits - 1), 30)
+                    self._log(colored(
+                        f"  [{agent_name}] Rate limited at step {step} "
+                        f"({hits}/5), backing off {backoff}s",
+                        Color.YELLOW,
+                    ))
+                    await asyncio.sleep(backoff)
+                else:
+                    self._log(colored(
+                        f"  [{agent_name}] ERROR at step {step}: {exc}",
+                        Color.RED if hasattr(Color, 'RED') else Color.YELLOW,
+                    ))
+                    logger.exception("Agent %s failed at step %d", agent_id, step)
+                    self._agent_steps[agent_id] = step + 1
+                    await asyncio.sleep(0.1)
 
         self._log(colored(
             f"  Agent {agent_name} finished ({self._agent_steps[agent_id]} steps)",
@@ -687,7 +942,7 @@ class AsyncOrchestrator:
             await self._store_conversation_memory(conv, conv.messages[-1])
 
         if action.communication.get("message"):
-            preview = message_text[:100] + "..." if len(message_text) > 100 else message_text
+            preview = message_text
             mode = "privately messaged" if action.action_type == "message" else "said aloud"
             self._log(colored(
                 f"    {mode}: \"{preview}\"",
@@ -812,7 +1067,7 @@ class AsyncOrchestrator:
                     agent_id=agent_id,
                     tick=0,
                     memory_type="observation",
-                    content=f"My situation: {prompt.strip()[:500]}",
+                    content=f"My situation: {prompt.strip()}",
                     importance=9,
                     tags=["identity", "initial"],
                 )

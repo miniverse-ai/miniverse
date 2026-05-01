@@ -60,6 +60,8 @@ from .schemas import (
     WorldEvent,
     AgentProfile,
     AgentAction,
+    OutgoingMessage,
+    StepDecision,
     AgentPerception,
     GridVisibility,
     VisibleGridTile,
@@ -107,6 +109,8 @@ __all__ = [
     # Agent schemas
     "AgentProfile",
     "AgentAction",
+    "OutgoingMessage",
+    "StepDecision",
     "AgentPerception",
     "GridVisibility",
     "VisibleGridTile",

@@ -454,6 +454,51 @@ class AgentAction(BaseModel):
     )
 
 
+class OutgoingMessage(BaseModel):
+    """A private message an agent wants to send as part of a step decision."""
+
+    to: str = Field(..., description="Agent ID to send message to")
+    message: str = Field(..., description="Message content")
+
+
+class StepDecision(BaseModel):
+    """Composite output for a single agent step: communication + action.
+
+    StepDecision replaces the pattern where communication (talk/message) and
+    physical actions competed for the same step slot. Now agents can send
+    private messages, speak publicly, AND take an action — all in one step.
+
+    This is the output schema for LLMExecutor.choose_step(). Old-style
+    AgentAction outputs are converted via wrap_action_as_step_decision()
+    for backward compatibility.
+    """
+
+    agent_id: str = Field(..., description="Agent making the decision")
+    tick: int = Field(..., ge=0, description="Current step")
+
+    # Communication (optional)
+    new_messages: List[OutgoingMessage] = Field(
+        default_factory=list,
+        description="Private messages to send (0 or more)",
+    )
+    public_speech: Optional[str] = Field(
+        None, description="What to say aloud at current location, or null"
+    )
+
+    # Action (required)
+    action_type: str = Field(
+        ...,
+        description="Action to take: work, investigate, meet, move_to, wait, check_inbox, do_nothing",
+    )
+    target: Optional[str] = Field(
+        None, description="Target of action (agent, location, task)"
+    )
+    parameters: Optional[Dict[str, Union[str, int, float, bool]]] = Field(
+        None, description="Action-specific parameters"
+    )
+    reasoning: str = Field("", description="Why this action was chosen")
+
+
 class VisibleGridTile(BaseModel):
     """A tile visible to the agent within their local grid view."""
 
@@ -544,6 +589,11 @@ class AgentPerception(BaseModel):
     grid_visibility: Optional[GridVisibility] = Field(
         None,
         description="Visible grid window with tile metadata for spatial environments",
+    )
+    # unread_message_count tells the agent how many pending messages they have
+    # without revealing content — the agent must choose check_inbox to read them
+    unread_message_count: int = Field(
+        0, description="Number of unread messages in inbox (choose check_inbox to read)"
     )
     # ASCII rendering removed from core schema; scenarios should add custom context via
     # SimulationRules.customize_perception() when they need human-readable grids.
