@@ -1003,8 +1003,7 @@ class AsyncOrchestrator:
 
                 is_billing = any(s in exc_str for s in [
                     "insufficient_quota", "billing_hard_limit",
-                    "exceeded your current quota", "billing",
-                    "you exceeded", "account",
+                    "exceeded your current quota",
                 ])
                 if is_billing:
                     self._log(colored(
@@ -1252,8 +1251,7 @@ class AsyncOrchestrator:
                 # Detect billing/credit exhaustion — abort immediately
                 is_billing = any(s in exc_str for s in [
                     "insufficient_quota", "billing_hard_limit",
-                    "exceeded your current quota", "billing",
-                    "you exceeded", "account",
+                    "exceeded your current quota",
                 ])
                 if is_billing:
                     self._log(colored(
