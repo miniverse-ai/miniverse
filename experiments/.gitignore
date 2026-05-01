@@ -1,0 +1,6 @@
+# Simulation output files
+*.txt
+outputs/
+
+# Temp merged scenario files
+*-????????.yaml
