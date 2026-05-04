@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import time
 import re
+import os
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
@@ -47,10 +48,17 @@ class BazaarActions(ScenarioActions):
 
         # Market timing config
         market_cfg = data.get("market", {})
-        self.open_hour: int = market_cfg.get("open_hour", 9)
-        self.close_hour: int = market_cfg.get("close_hour", 13)
-        self.real_min_per_sim_hour: float = market_cfg.get("real_minutes_per_sim_hour", 1)
-        self.simulation_days: int = int(market_cfg.get("simulation_days", 5))
+        self.open_hour: int = int(os.environ.get("BASIN_BAZAAR_OPEN_HOUR", market_cfg.get("open_hour", 9)))
+        self.close_hour: int = int(os.environ.get("BASIN_BAZAAR_CLOSE_HOUR", market_cfg.get("close_hour", 13)))
+        self.real_min_per_sim_hour: float = float(
+            os.environ.get(
+                "BASIN_BAZAAR_REAL_MINUTES_PER_SIM_HOUR",
+                market_cfg.get("real_minutes_per_sim_hour", 1),
+            )
+        )
+        self.simulation_days: int = int(
+            os.environ.get("BASIN_BAZAAR_SIMULATION_DAYS", market_cfg.get("simulation_days", 5))
+        )
         configured_fee = market_cfg.get("daily_operating_fee")
         self.daily_operating_fee: float = (
             float(configured_fee)
@@ -58,7 +66,10 @@ class BazaarActions(ScenarioActions):
             else self._infer_daily_fee(data)
         )
         self.planning_timeout_seconds: float = float(
-            market_cfg.get("planning_timeout_seconds", 90)
+            os.environ.get(
+                "BASIN_BAZAAR_PLANNING_TIMEOUT_SECONDS",
+                market_cfg.get("planning_timeout_seconds", 90),
+            )
         )
         self.current_date: date = datetime.strptime(
             market_cfg.get("start_date", "2026-10-11"), "%Y-%m-%d"
