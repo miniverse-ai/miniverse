@@ -909,6 +909,15 @@ class BazaarActions(ScenarioActions):
     def _format_item_names(self, item_ids: List[str] | Set[str]) -> str:
         return ", ".join(self._item_display_name(item_id) for item_id in item_ids)
 
+    def _valid_stock_item_names(self, vendor_id: str) -> str:
+        vendor = self.vendors.get(vendor_id, {})
+        names = [
+            self.catalog.get(item_id, {}).get("name", item_id)
+            for item_id, qty in sorted(vendor.get("stock", {}).items())
+            if qty > 0
+        ]
+        return ", ".join(names) if names else "none"
+
     def _resolve_item_id(self, item: Optional[str]) -> Optional[str]:
         """Accept canonical IDs and exact display names from model parameters."""
         if not item:
@@ -930,7 +939,7 @@ class BazaarActions(ScenarioActions):
         {"name": "check_inventory", "description": "View your current stock, wholesale costs, and listed prices."},
         {"name": "check_customer_activity", "description": "See customers currently engaging your business, including recent negotiation dialogue and any formal offers."},
         {"name": "check_ledger", "description": "Read your full transaction ledger."},
-        {"name": "accept_deal", "description": "Accept one customer's formal offer and complete one sale or bundle sale. Target: customer name. Parameters: item (optional exact item name), price (optional number)."},
+        {"name": "accept_deal", "description": "Accept one customer's formal offer and complete one sale or bundle sale. Target: customer name. Parameters: item (optional exact item name from your current inventory), price (optional number), bonus_items (optional list of exact item names from your current inventory to include free as a promotion). Free bonus items must be real items you currently stock."},
         {"name": "reject_deal", "description": "Reject one customer's formal offer. Target: customer name. Parameters: item (optional exact item name)."},
     ]
 
@@ -949,7 +958,7 @@ class BazaarActions(ScenarioActions):
     CUSTOMER_MARKET_TOOLS: List[Dict[str, Any]] = [
         {"name": "check_market_status", "description": "See current market time, active vendors, active customers, the vendor you are currently engaging, and recent public market talk."},
         {"name": "inspect_vendor", "description": "Inspect one vendor's current goods and listed prices, and start or continue engagement with that vendor. Target: shop name, such as Lantern Pantry or Corner Provisions."},
-        {"name": "make_offer", "description": "Make a formal offer after negotiation. For one item, use item (exact item name from the vendor listing) and price. For a bundle, use items (list of exact item names from the vendor listing) and price as the total bundle price. Target: shop name."},
+        {"name": "make_offer", "description": "Make a formal offer after negotiation. For one item, use item (exact item name from the vendor listing) and price. For a bundle, use items (list of exact item names from the vendor listing) and price as the total bundle price. Target: shop name. Do not invent alternate item names."},
         {"name": "check_budget", "description": "View your remaining budget, shopping list, and purchases."},
         {"name": "leave_market", "description": "Leave the market for the day when you are done shopping or decide to stop."},
     ]
@@ -1089,7 +1098,8 @@ class BazaarActions(ScenarioActions):
                 if error:
                     return error
             return self._vendor_accept_deal(agent_id, params.get("customer") or target,
-                                            params.get("item", ""), price or 0)
+                                            params.get("item", ""), price or 0,
+                                            params.get("bonus_items") or [])
         elif action_type == "reject_deal":
             return self._reject_deal(agent_id, params.get("customer") or target,
                                      params.get("item", ""))
@@ -1659,7 +1669,14 @@ class BazaarActions(ScenarioActions):
                 unique_items.append(item_id)
         invalid = [item_id for item_id in unique_items if item_id not in self.catalog]
         if invalid:
-            return ActionResult(success=False, content=f"Invalid item(s) {invalid!r}. Use exact item names from the vendor listing, then call make_offer again.")
+            return ActionResult(
+                success=False,
+                content=(
+                    f"Invalid item(s) {invalid!r}. Use exact item names from "
+                    f"{self._vendor_label(vendor)}'s current listing. "
+                    f"Valid current items: {self._valid_stock_item_names(vendor)}."
+                ),
+            )
         out = [
             self.catalog[item_id]["name"]
             for item_id in unique_items
@@ -1735,7 +1752,8 @@ class BazaarActions(ScenarioActions):
                 content=(
                     "Unknown bundle item(s): "
                     + ", ".join(str(item) for item in invalid)
-                    + ". Use exact item names from the vendor listing."
+                    + ". Use exact item names from your current inventory. "
+                    + f"Valid current items: {self._valid_stock_item_names(vendor_id)}."
                 ),
             )
         vendor = self.vendors.get(vendor_id, {})
@@ -1797,7 +1815,80 @@ class BazaarActions(ScenarioActions):
             )
         )
 
-    def _vendor_accept_deal(self, agent_id: str, customer: Optional[str], item: Any, price: float) -> ActionResult:
+    def _record_bonus_items(
+        self,
+        vendor_id: str,
+        customer_id: str,
+        raw_bonus_items: Any,
+    ) -> tuple[List[str], Optional[ActionResult]]:
+        bonus_items = self._coerce_item_list(raw_bonus_items)
+        if not bonus_items:
+            return [], None
+        unique_bonus: List[str] = []
+        for item_id in bonus_items:
+            if item_id not in unique_bonus:
+                unique_bonus.append(item_id)
+        invalid = [item_id for item_id in unique_bonus if item_id not in self.catalog]
+        if invalid:
+            return [], ActionResult(
+                success=False,
+                content=(
+                    "Unknown bonus item(s): "
+                    + ", ".join(str(item) for item in invalid)
+                    + ". Use exact item names from your current inventory. "
+                    + f"Valid current bonus items: {self._valid_stock_item_names(vendor_id)}."
+                ),
+            )
+        vendor = self.vendors[vendor_id]
+        out = [
+            self.catalog[item_id]["name"]
+            for item_id in unique_bonus
+            if vendor.get("stock", {}).get(item_id, 0) <= 0
+        ]
+        if out:
+            return [], ActionResult(success=False, content="Out of stock for bonus item(s): " + ", ".join(out) + ".")
+
+        customer = self.customers[customer_id]
+        recorded: List[str] = []
+        for item_id in unique_bonus:
+            info = self.catalog[item_id]
+            vendor["stock"][item_id] -= 1
+            vendor["ledger"].append({
+                "day": self.current_day,
+                "time": self._get_simulated_time(),
+                "type": "promotion",
+                "customer": customer_id,
+                "item": item_id,
+                "listed_price": vendor.get("listed_prices", {}).get(item_id, 0),
+                "final_price": 0.0,
+                "cost": info["wholesale"],
+                "margin": -float(info["wholesale"]),
+            })
+            customer["purchased"].append({
+                "day": self.current_day,
+                "vendor": vendor_id,
+                "item": item_id,
+                "price": 0.0,
+            })
+            if item_id in customer["still_need"]:
+                customer["still_need"].remove(item_id)
+            recorded.append(info["name"])
+
+        if recorded:
+            line = f"Promotional bonus included free: {', '.join(recorded)}."
+            self._append_stall_chat(vendor_id, customer_id, "Register", line)
+            self.pending_context_markers.append({"to": vendor_id, "content": line})
+            self.pending_context_markers.append({"to": customer_id, "content": line})
+        return recorded, None
+
+    def _vendor_accept_deal(
+        self,
+        agent_id: str,
+        customer: Optional[str],
+        item: Any,
+        price: float,
+        bonus_items: Any = None,
+    ) -> ActionResult:
         if agent_id not in VENDOR_IDS:
             return ActionResult(content="You are not a vendor.")
         resolved_customer = self._resolve_agent_ref(customer)
@@ -1843,6 +1934,9 @@ class BazaarActions(ScenarioActions):
                 )
             result = self._execute_bundle_sale(agent_id, customer, item_list, price)
             if result.content.startswith("BUNDLE SALE:"):
+                bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, bonus_items)
+                if bonus_error:
+                    return bonus_error
                 remaining_offers = [
                     pending_offer
                     for pending_offer in offers
@@ -1852,9 +1946,14 @@ class BazaarActions(ScenarioActions):
                     self.formal_offers[(agent_id, customer)] = remaining_offers
                 else:
                     self.formal_offers.pop((agent_id, customer), None)
+                if bonus_names:
+                    result.content += "\nBONUS: " + ", ".join(bonus_names) + " included free."
             return result
         result = self._execute_sale(agent_id, customer, item, price, initiated_by="vendor")
         if "SALE:" in result.content:
+            bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, bonus_items)
+            if bonus_error:
+                return bonus_error
             remaining_offers = [
                 pending_offer
                 for pending_offer in offers
@@ -1865,6 +1964,8 @@ class BazaarActions(ScenarioActions):
                 self.formal_offers[(agent_id, customer)] = remaining_offers
             else:
                 self.formal_offers.pop((agent_id, customer), None)
+            if bonus_names:
+                result.content += "\nBONUS: " + ", ".join(bonus_names) + " included free."
         return result
 
     def _reject_deal(self, agent_id: str, customer: Optional[str], item: str) -> ActionResult:
