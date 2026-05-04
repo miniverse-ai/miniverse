@@ -371,6 +371,10 @@ class BazaarActions(ScenarioActions):
                 v = self.vendors[vid]
                 if not v.get("active", True):
                     continue
+                # A fresh preparation phase requires a fresh strategy note.
+                # Listed prices persist, but the plan must be rewritten daily
+                # so stale holds or closing-hour tactics do not carry forward.
+                v["plan"] = ""
                 today_sales = [
                     e for e in v["ledger"]
                     if e.get("day") == self.current_day and e.get("type", "sale") == "sale"
@@ -1596,8 +1600,33 @@ class BazaarActions(ScenarioActions):
             )
             if self.phase == "market" and any(pattern in text for pattern in stale_phase_patterns):
                 return True
+            stale_closing_patterns = (
+                "closing flash",
+                "final call",
+                "final hour",
+                "last chance",
+                "last minutes",
+                "open until 5pm",
+                "open until 5:00",
+                "before close",
+            )
+            if (
+                self.phase == "market"
+                and not self._is_final_market_hour()
+                and any(pattern in text for pattern in stale_closing_patterns)
+            ):
+                return True
             return False
         return False
+
+    def _is_final_market_hour(self) -> bool:
+        """Whether current simulated market time is in the final open hour."""
+        if self.phase != "market" or self._market_start_time is None:
+            return False
+        elapsed_real_min = (time.time() - self._market_start_time) / 60.0
+        elapsed_sim_min = elapsed_real_min * 60.0 / self.real_min_per_sim_hour
+        final_hour_start = max(0.0, (self.close_hour - self.open_hour - 1) * 60.0)
+        return elapsed_sim_min >= final_hour_start
 
     def _make_offer(
         self,
@@ -2582,7 +2611,15 @@ class BazaarActions(ScenarioActions):
                         "metadata": {"day": self.current_day, "kind": m.kind},
                     })
             except Exception:
-                fallback = f"{self._format_date()}: {active_context}"
+                # Do not store the raw active context as memory. If the dream
+                # LLM fails, a deterministic factual summary is safer than
+                # re-injecting stale dialogue and old phase instructions into
+                # the next day's prompt.
+                fallback = (
+                    self._build_vendor_day_summary(agent_id)
+                    if agent_id in VENDOR_IDS
+                    else self._build_customer_day_summary(agent_id)
+                )
                 daily_summary = fallback
                 mem_records.append({
                     "agent_id": agent_id,
