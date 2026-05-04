@@ -362,11 +362,10 @@ class BazaarActions(ScenarioActions):
             for cid in CUSTOMER_IDS:
                 self._customers_done.add(cid)
         else:
-            # Market close is an episode boundary. Preserve the lived market
-            # context for dreaming before resetting active prompts into the
-            # preparation action contract.
-            self._capture_day_context_for_dream()
-            # End of day planning
+            # Preparation stays in the same active context as the market day.
+            # The dream/reset boundary happens after preparation completes so
+            # supplier follow-through, plans, and new lists are compressed with
+            # the day they came from.
             for vid in VENDOR_IDS:
                 v = self.vendors[vid]
                 if not v.get("active", True):
@@ -404,7 +403,6 @@ class BazaarActions(ScenarioActions):
                     f"  Orders placed now arrive after two calendar days and are available at the next open market session if the market is closed on the arrival date.\n\n"
                     f"Use wait_for_next_day when done.",
                 )
-                self.context_resets[vid] = self._build_day_prompt(vid, [], "")
             for cid in CUSTOMER_IDS:
                 self._queue_context(
                     cid,
@@ -421,7 +419,6 @@ class BazaarActions(ScenarioActions):
                     f"something unusual, write a clear name for it.\n"
                     f"Writing the list completes preparation; you will wait until the market opens.",
                 )
-                self.context_resets[cid] = self._build_day_prompt(cid, [], "")
 
     def _capture_day_context_for_dream(self) -> None:
         """Snapshot active market-day context before preparation resets it."""
@@ -550,6 +547,7 @@ class BazaarActions(ScenarioActions):
             self._vendors_done = set(VENDOR_IDS)
             self._customers_done = set(CUSTOMER_IDS)
             if self.current_day > 0:
+                self._capture_day_context_for_dream()
                 await self._run_dream_phase()
             self._advance_day()
 
@@ -2480,6 +2478,7 @@ class BazaarActions(ScenarioActions):
             # Dream phase — compress today's events into memories for each agent,
             # then queue context resets so each wakes up with fresh state.
             if self.current_day > 0:
+                self._capture_day_context_for_dream()
                 await self._run_dream_phase()
             self._advance_day()
             return ActionResult(content=f"Everyone ready. The market session for {self._format_date()} begins!")
