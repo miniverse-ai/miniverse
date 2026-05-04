@@ -1704,6 +1704,17 @@ class BazaarActions(ScenarioActions):
                 resolved.append(item_id)
         return resolved
 
+    def _offer_item_list(self, offer: dict) -> List[str]:
+        return self._coerce_item_list(offer.get("item"))
+
+    def _flatten_offer_items(self, offers: List[dict]) -> List[str]:
+        flattened: List[str] = []
+        for offer in offers:
+            for item_id in self._offer_item_list(offer):
+                if item_id not in flattened:
+                    flattened.append(item_id)
+        return flattened
+
     def _execute_bundle_sale(
         self,
         vendor_id: str,
@@ -1798,13 +1809,31 @@ class BazaarActions(ScenarioActions):
         has_dialogue = bool(self.stall_chats.get(self._chat_key(agent_id, customer)))
         if self.active_visits.get(customer) != agent_id and not offers and not has_dialogue:
             return ActionResult(success=False, content=f"{self._customer_label(customer)} is not currently engaging your business. Use check_customer_activity to see current customers and pending offers.")
-        if offers and (not item or not price):
-            if len(offers) == 1:
-                item = offers[0]["item"]
-                price = offers[0]["price"]
-            else:
-                item = [pending_offer["item"] for pending_offer in offers]
-                price = sum(float(pending_offer["price"]) for pending_offer in offers)
+        selected_offers: List[dict] = []
+        if offers:
+            requested_items = self._coerce_item_list(item)
+            if requested_items:
+                requested_set = set(requested_items)
+                for pending_offer in offers:
+                    offer_items = set(self._offer_item_list(pending_offer))
+                    if (
+                        offer_items
+                        and (
+                            offer_items.issubset(requested_set)
+                            or requested_set.issubset(offer_items)
+                            or bool(offer_items & requested_set)
+                        )
+                    ):
+                        selected_offers.append(pending_offer)
+            if not selected_offers:
+                selected_offers = offers
+
+            item = (
+                selected_offers[0]["item"]
+                if len(selected_offers) == 1
+                else self._flatten_offer_items(selected_offers)
+            )
+            price = sum(float(pending_offer["price"]) for pending_offer in selected_offers)
         item_list = self._coerce_item_list(item)
         if len(item_list) > 1:
             if price <= 0:
@@ -1814,14 +1843,23 @@ class BazaarActions(ScenarioActions):
                 )
             result = self._execute_bundle_sale(agent_id, customer, item_list, price)
             if result.content.startswith("BUNDLE SALE:"):
-                self.formal_offers.pop((agent_id, customer), None)
+                remaining_offers = [
+                    pending_offer
+                    for pending_offer in offers
+                    if pending_offer not in selected_offers
+                ]
+                if remaining_offers:
+                    self.formal_offers[(agent_id, customer)] = remaining_offers
+                else:
+                    self.formal_offers.pop((agent_id, customer), None)
             return result
         result = self._execute_sale(agent_id, customer, item, price, initiated_by="vendor")
         if "SALE:" in result.content:
             remaining_offers = [
                 pending_offer
                 for pending_offer in offers
-                if pending_offer.get("item") != self._resolve_item_id(item)
+                if pending_offer not in selected_offers
+                and pending_offer.get("item") != self._resolve_item_id(item)
             ]
             if remaining_offers:
                 self.formal_offers[(agent_id, customer)] = remaining_offers
