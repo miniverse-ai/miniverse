@@ -926,7 +926,7 @@ class BazaarActions(ScenarioActions):
         {"name": "check_inventory", "description": "View your current stock, wholesale costs, and listed prices."},
         {"name": "check_customer_activity", "description": "See customers currently engaging your business, including recent negotiation dialogue and any formal offers."},
         {"name": "check_ledger", "description": "Read your full transaction ledger."},
-        {"name": "accept_deal", "description": "Accept one customer's formal offer and complete one sale. Target: customer name. Parameters: item (optional exact item name), price (optional number)."},
+        {"name": "accept_deal", "description": "Accept one customer's formal offer and complete one sale or bundle sale. Target: customer name. Parameters: item (optional exact item name), price (optional number)."},
         {"name": "reject_deal", "description": "Reject one customer's formal offer. Target: customer name. Parameters: item (optional exact item name)."},
     ]
 
@@ -945,7 +945,7 @@ class BazaarActions(ScenarioActions):
     CUSTOMER_MARKET_TOOLS: List[Dict[str, Any]] = [
         {"name": "check_market_status", "description": "See current market time, active vendors, active customers, the vendor you are currently engaging, and recent public market talk."},
         {"name": "inspect_vendor", "description": "Inspect one vendor's current goods and listed prices, and start or continue engagement with that vendor. Target: shop name, such as Lantern Pantry or Corner Provisions."},
-        {"name": "make_offer", "description": "Make a formal offer for one item after negotiation. Use one make_offer per item. Target: shop name. Parameters: item (exact item name from the vendor listing), price (number)."},
+        {"name": "make_offer", "description": "Make a formal offer after negotiation. For one item, use item (exact item name from the vendor listing) and price. For a bundle, use items (list of exact item names from the vendor listing) and price as the total bundle price. Target: shop name."},
         {"name": "check_budget", "description": "View your remaining budget, shopping list, and purchases."},
         {"name": "leave_market", "description": "Leave the market for the day when you are done shopping or decide to stop."},
     ]
@@ -1069,7 +1069,7 @@ class BazaarActions(ScenarioActions):
                     )
                 return self._make_offer(
                     agent_id,
-                    params.get("item"),
+                    params.get("items") if "items" in params else params.get("item"),
                     price or 0,
                     params.get("vendor") or target,
                 )
@@ -1288,8 +1288,16 @@ class BazaarActions(ScenarioActions):
             if offer:
                 offers = offer if isinstance(offer, list) else [offer]
                 for pending_offer in offers:
-                    item_name = self.catalog.get(pending_offer["item"], {}).get("name", pending_offer["item"])
-                    lines.append(f"  Formal offer: {item_name} for ${pending_offer['price']:.2f}")
+                    offered_item = pending_offer["item"]
+                    if isinstance(offered_item, list):
+                        item_name = ", ".join(
+                            self.catalog.get(item_id, {}).get("name", item_id)
+                            for item_id in offered_item
+                        )
+                        lines.append(f"  Formal bundle offer: {item_name} for ${pending_offer['price']:.2f}")
+                    else:
+                        item_name = self.catalog.get(offered_item, {}).get("name", offered_item)
+                        lines.append(f"  Formal offer: {item_name} for ${pending_offer['price']:.2f}")
         return ActionResult(content="\n".join(lines))
 
     def _market_participants(self) -> Set[str]:
@@ -1594,7 +1602,7 @@ class BazaarActions(ScenarioActions):
     def _make_offer(
         self,
         agent_id: str,
-        item: Optional[str],
+        item: Any,
         price: float,
         vendor_ref: Optional[str] = None,
     ) -> ActionResult:
@@ -1608,24 +1616,45 @@ class BazaarActions(ScenarioActions):
             vendor = self.active_visits[agent_id]
         else:
             return ActionResult(content="No vendor selected. Inspect a vendor or specify a target vendor first.")
-        item = self._resolve_item_id(item) or ""
-        if not item or item not in self.catalog:
-            return ActionResult(success=False, content=f"Invalid item '{item}'. Use an exact item name from the vendor listing, then call make_offer again.")
         v = self.vendors[vendor]
         if not v.get("active", True):
             return ActionResult(content=f"{self._vendor_label(vendor)} is closed.")
-        if v["stock"].get(item, 0) <= 0:
-            return ActionResult(content=f"{self._vendor_label(vendor)} is out of {self.catalog[item]['name']}.")
         if price <= 0:
-            return ActionResult(success=False, content="Invalid price. Price must be positive. Example: make_offer target=Lantern Pantry item=\"Miso Paste (500g)\" price=5.")
-        name = self.catalog[item]["name"]
+            return ActionResult(success=False, content="Invalid price. Price must be positive. Example: make_offer target=Lantern Pantry item=\"Miso Paste (500g)\" price=5, or items=[\"Miso Paste (500g)\", \"Short-grain Rice (2kg bag)\"] price=13.")
+        item_list = self._coerce_item_list(item)
+        if not item_list:
+            return ActionResult(success=False, content="Invalid parameters: make_offer needs `item` for one item or `items` for a bundle.")
+        unique_items: List[str] = []
+        for item_id in item_list:
+            if item_id not in unique_items:
+                unique_items.append(item_id)
+        invalid = [item_id for item_id in unique_items if item_id not in self.catalog]
+        if invalid:
+            return ActionResult(success=False, content=f"Invalid item(s) {invalid!r}. Use exact item names from the vendor listing, then call make_offer again.")
+        out = [
+            self.catalog[item_id]["name"]
+            for item_id in unique_items
+            if v["stock"].get(item_id, 0) <= 0
+        ]
+        if out:
+            return ActionResult(content=f"{self._vendor_label(vendor)} is out of: {', '.join(out)}.")
         key = (vendor, agent_id)
         pending = self.formal_offers.get(key, [])
         if isinstance(pending, dict):
             pending = [pending]
-        pending = [offer for offer in pending if offer.get("item") != item]
-        pending.append({"item": item, "price": price})
+        offered_set = set(unique_items)
+        pending = [
+            offer for offer in pending
+            if not (set(self._coerce_item_list(offer.get("item"))) & offered_set)
+        ]
+        offer_item: str | List[str] = unique_items if len(unique_items) > 1 else unique_items[0]
+        pending.append({"item": offer_item, "price": price})
         self.formal_offers[key] = pending
+        if len(unique_items) > 1:
+            names = ", ".join(self.catalog[item_id]["name"] for item_id in unique_items)
+            self._append_stall_chat(vendor, agent_id, self.customers[agent_id]["name"], f"I offer ${price:.2f} total for {names}.")
+            return ActionResult(content=f"Formal bundle offer made to {self._vendor_label(vendor)}: {names} for ${price:.2f} total.")
+        name = self.catalog[unique_items[0]]["name"]
         self._append_stall_chat(vendor, agent_id, self.customers[agent_id]["name"], f"I offer ${price:.2f} for {name}.")
         return ActionResult(content=f"Formal offer made to {self._vendor_label(vendor)}: {name} for ${price:.2f}.")
 
