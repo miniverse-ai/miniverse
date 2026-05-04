@@ -167,6 +167,18 @@ def run_claude(prompt: str, model: str) -> str:
     return result.stdout.strip()
 
 
+def parse_judge_output(raw: str) -> dict[str, Any]:
+    parsed = json.loads(raw)
+    if isinstance(parsed, dict) and isinstance(parsed.get("result"), str):
+        try:
+            return json.loads(parsed["result"])
+        except json.JSONDecodeError:
+            return {"claude_result": parsed, "parse_error": True}
+    if isinstance(parsed, dict):
+        return parsed
+    return {"raw": parsed}
+
+
 def write_pass(
     judgments_dir: Path,
     pass_name: str,
@@ -189,7 +201,7 @@ def write_pass(
         return
     raw = run_claude(prompt, model)
     try:
-        parsed = json.loads(raw)
+        parsed = parse_judge_output(raw)
     except json.JSONDecodeError:
         parsed = {"raw": raw, "parse_error": True}
     output_path.write_text(json.dumps(parsed, indent=2, ensure_ascii=False))
