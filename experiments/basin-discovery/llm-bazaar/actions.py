@@ -805,6 +805,13 @@ class BazaarActions(ScenarioActions):
                 )
             elif v.get("plan"):
                 parts.append(f"Your plan for today:\n{v['plan']}")
+            if self.phase == "market":
+                parts.append(
+                    "Deal rule: formal sales and free promotional bonuses can "
+                    "only use exact item names from your current inventory. "
+                    "Use accept_deal for a pending formal offer. If you include "
+                    "a free stocked item, put its exact name in bonus_items."
+                )
             # Inventory + listed prices snapshot
             inv_lines = []
             for item_id, qty in sorted(v.get("stock", {}).items()):
@@ -883,6 +890,11 @@ class BazaarActions(ScenarioActions):
                 parts.append(
                     f"Still to buy: {items}\n"
                     f"Budget: ${c.get('remaining_budget', 0):.2f}"
+                )
+                parts.append(
+                    "Deal rule: use make_offer only with exact item names from "
+                    "the vendor's current listing. For a bundle, put those exact "
+                    "listed names in items and one total price."
                 )
 
         # Action catalog

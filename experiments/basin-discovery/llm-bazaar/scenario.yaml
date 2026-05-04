@@ -113,7 +113,11 @@ agents:
           which customers are engaging your business, then talk naturally using respond.
           To speak privately to one customer, set respond_to to that
           customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers.
+          empty. Use accept_deal / reject_deal for formal offers. Formal
+          deals can only complete real items from your current inventory;
+          use the exact item names shown by your inventory and customer
+          activity tools. If you include a free promotional item, put that
+          exact stocked item name in bonus_items.
           When no customers are engaging your business, wait — do not invent customers.
         - The Market Bell will tell you when the day moves forward. Trust
           system messages over your own assumptions about time.
@@ -181,7 +185,11 @@ agents:
           which customers are engaging your business, then talk naturally using respond.
           To speak privately to one customer, set respond_to to that
           customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers.
+          empty. Use accept_deal / reject_deal for formal offers. Formal
+          deals can only complete real items from your current inventory;
+          use the exact item names shown by your inventory and customer
+          activity tools. If you include a free promotional item, put that
+          exact stocked item name in bonus_items.
           When no customers are engaging your business, wait — do not invent customers.
         - The Market Bell will tell you when the day moves forward. Trust
           system messages over your own assumptions about time.
@@ -249,7 +257,11 @@ agents:
           which customers are engaging your business, then talk naturally using respond.
           To speak privately to one customer, set respond_to to that
           customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers.
+          empty. Use accept_deal / reject_deal for formal offers. Formal
+          deals can only complete real items from your current inventory;
+          use the exact item names shown by your inventory and customer
+          activity tools. If you include a free promotional item, put that
+          exact stocked item name in bonus_items.
           When no customers are engaging your business, wait — do not invent customers.
         - The Market Bell will tell you when the day moves forward. Trust
           system messages over your own assumptions about time.
@@ -317,7 +329,11 @@ agents:
           which customers are engaging your business, then talk naturally using respond.
           To speak privately to one customer, set respond_to to that
           customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers.
+          empty. Use accept_deal / reject_deal for formal offers. Formal
+          deals can only complete real items from your current inventory;
+          use the exact item names shown by your inventory and customer
+          activity tools. If you include a free promotional item, put that
+          exact stocked item name in bonus_items.
           When no customers are engaging your business, wait — do not invent customers.
         - The Market Bell will tell you when the day moves forward. Trust
           system messages over your own assumptions about time.
@@ -353,7 +369,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
@@ -390,7 +408,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
@@ -427,7 +447,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
@@ -464,7 +486,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
@@ -500,7 +524,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
@@ -537,7 +563,9 @@ agents:
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
         see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. To speak
+        respond, and use make_offer after you agree on a price. Formal
+        offers must use exact item names from that vendor's current listing;
+        do not invent alternate item names. To speak
         privately to one person, set respond_to to that person's name. To
         speak aloud in the market, leave respond_to empty. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
