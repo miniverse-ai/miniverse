@@ -1075,9 +1075,15 @@ class BazaarActions(ScenarioActions):
                 )
             return ActionResult(content="Customers use make_offer after negotiation; vendors can accept_deal or reject_deal.")
         elif action_type == "accept_deal" and agent_id in VENDOR_IDS:
-            price, error = _number(params.get("price"), "price")
-            if error:
+            raw_price = params.get("price")
+            if raw_price is None or raw_price == "":
+                # Omitted price → fall through with 0 so _vendor_accept_deal
+                # can use the pending-offer fallback when one exists.
                 price = 0
+            else:
+                price, error = _number(raw_price, "price")
+                if error:
+                    return error
             return self._vendor_accept_deal(agent_id, params.get("customer") or target,
                                             params.get("item", ""), price or 0)
         elif action_type == "reject_deal":
@@ -1505,6 +1511,20 @@ class BazaarActions(ScenarioActions):
         if action_type in action_response_is_not_speech:
             return "suppress"
         if self._looks_like_preparation_summary(agent_id, content):
+            return "suppress"
+        # Non-empty respond_to that does not resolve → tell the agent and
+        # do not route the speech anywhere. Prevents "I'll DM the corner one"
+        # from silently broadcasting publicly when the name doesn't match.
+        if respond_to and respond_to.strip() and resolved_target is None:
+            available = self._format_agent_list(self._market_participants()) or "none"
+            self.pending_context_markers.append({
+                "to": agent_id,
+                "content": (
+                    f"[Speech routing failed] No agent named "
+                    f"'{respond_to}' is in the market. Available: {available}. "
+                    f"Your message was not sent: {content.strip()}"
+                ),
+            })
             return "suppress"
         if self.phase == "planning":
             if agent_id in VENDOR_IDS and resolved_target == SUPPLIER_ID:
@@ -2040,13 +2060,16 @@ class BazaarActions(ScenarioActions):
         raw = str(raw_item).strip()
         if not raw:
             return None
+        # Exact catalog match (id or display name) → catalog SKU.
+        # No substring matching: "rice noodles" must not collapse to "rice".
         resolved = self._resolve_item_id(raw)
         if resolved in self.catalog:
             return resolved
-        lowered_id = re.sub(r"[^a-z0-9]+", "_", raw.lower()).strip("_")
+        lowered = raw.lower()
         for item_id in self.catalog:
-            if item_id in lowered_id:
+            if lowered == item_id.lower():
                 return item_id
+        # Otherwise treat as specialty want; supplier-sourcing path handles it.
         cleaned = re.sub(r"[^a-z0-9_*]+", "_", raw.lower()).strip("_")
         if not cleaned:
             return None
