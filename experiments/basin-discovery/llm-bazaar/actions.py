@@ -315,6 +315,9 @@ class BazaarActions(ScenarioActions):
         self._customers_done.clear()
         self._arrived_customers.clear()
         self.active_visits.clear()
+        if not is_day_zero:
+            # Any offer not accepted before the bell expires with that market day.
+            self.formal_offers.clear()
 
         if is_day_zero:
             # Initial planning before the first market session.
@@ -1358,7 +1361,8 @@ class BazaarActions(ScenarioActions):
         if self.market_chats:
             recent_public_talk = [
                 entry for entry in self.market_chats
-                if not self._looks_like_preparation_summary(
+                if entry.get("day") == self.current_day
+                and not self._looks_like_preparation_summary(
                     self._resolve_agent_ref(entry.get("speaker", "")) or "",
                     entry.get("message", ""),
                 )
@@ -1378,11 +1382,15 @@ class BazaarActions(ScenarioActions):
             "speaker": speaker,
             "message": message.strip(),
             "time": self._get_simulated_time() or "",
+            "day": self.current_day,
         })
         return self._format_stall_chat(vendor, customer)
 
     def _format_stall_chat(self, vendor: str, customer: str, limit: int = 8) -> str:
-        entries = self.stall_chats.get(self._chat_key(vendor, customer), [])[-limit:]
+        entries = [
+            entry for entry in self.stall_chats.get(self._chat_key(vendor, customer), [])
+            if entry.get("day") == self.current_day
+        ][-limit:]
         if not entries:
             return ""
         lines = ["  Recent negotiation dialogue:"]
@@ -1426,6 +1434,7 @@ class BazaarActions(ScenarioActions):
                 "speaker": speaker,
                 "message": content,
                 "time": self._get_simulated_time() or "",
+                "day": self.current_day,
             })
             marker = f"{speaker} says aloud in the market: {content}"
             targets = self._market_participants()
