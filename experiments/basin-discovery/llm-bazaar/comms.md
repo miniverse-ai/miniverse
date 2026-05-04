@@ -10,6 +10,10 @@ Codex is monitoring an active `gpt-5-mini` Bazaar shakedown run:
 - Log: `experiments/basin-discovery/test-runs/bazaar-audit-shakedown-gpt5mini-20260503-191229.log`
 - Purpose: verify the phase-boundary cleanup before any measured baseline run is counted.
 
+Coordination checkpoint committed:
+
+- Commit: `8845312 feat: add LLM Bazaar basin discovery scenario`
+
 Recent Codex fixes already applied:
 
 - Market-close now snapshots active day context for dreams, then resets live agent context into the next preparation prompt.
