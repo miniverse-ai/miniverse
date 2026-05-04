@@ -1,6 +1,6 @@
-# Simulation output files
-*.txt
+# Raw auto-saved run outputs (not curated)
 outputs/
+test-runs/
 
 # Temp merged scenario files
 *-????????.yaml
