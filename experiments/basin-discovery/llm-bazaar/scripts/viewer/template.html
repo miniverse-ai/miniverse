@@ -81,6 +81,9 @@
     grid-template-rows: 1fr;
     overflow: hidden; flex: 1; min-height: 0;
   }
+  main.thread-collapsed {
+    grid-template-columns: 250px minmax(0, 1fr) 54px;
+  }
   main.hidden { display: none; }
   #pane_right { display: none; }
   .network-tab {
@@ -141,13 +144,17 @@
   .ev {
     padding: 4px 6px; border-bottom: 1px solid #1a1f27; cursor: pointer;
     display: grid; grid-template-columns: 70px minmax(150px, 180px) 78px 1fr; gap: 8px;
+    align-items: start;
   }
   .ev:hover { background: var(--bg-3); }
   .ev.selected { background: #1d2733; }
   .ev .ts { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
   .ev .agent { color: var(--fg); font-weight: 600; }
   .ev .ch { font-size: 10px; padding: 1px 5px; border-radius: 3px; align-self: start; }
-  .ev .content { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ev .content {
+    color: var(--fg); white-space: pre-wrap; overflow: visible; text-overflow: clip;
+    overflow-wrap: anywhere; line-height: 1.35;
+  }
   .ch.public_speech { background: rgba(88,166,255,0.18); color: var(--public); }
   .ch.private_speech { background: rgba(188,140,255,0.18); color: var(--private); }
   .ch.supplier_speech { background: rgba(240,136,62,0.18); color: var(--supplier); }
@@ -164,6 +171,13 @@
   .ch.rate_limit { background: rgba(240,136,62,0.18); color: var(--warn); }
   .ch.other { background: rgba(110,118,129,0.18); color: var(--tool); }
   /* thread panel */
+  #pane_thread { transition: width 120ms ease; }
+  main.thread-collapsed #pane_thread { padding: 10px 6px; overflow: hidden; }
+  .pane-title-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+  .pane-title-row h3 { margin: 0; }
+  main.thread-collapsed #thread_context_body { display: none; }
+  main.thread-collapsed #thread_title { writing-mode: vertical-rl; text-orientation: mixed; white-space: nowrap; }
+  main.thread-collapsed #toggle_thread { align-self: flex-start; writing-mode: vertical-rl; padding: 6px 3px; }
   .thread { font-size: 12px; flex: 1; overflow: auto; }
   .thread .focused-hdr { padding: 6px 8px; background: var(--bg-3); border-radius: 4px; margin-bottom: 8px; }
   .thread .turn {
@@ -340,7 +354,7 @@
   <button class="tab-btn" data-tab="network">Social network</button>
   <button class="tab-btn" data-tab="judgments">Judgments</button>
 </nav>
-<main id="activity_tab">
+<main id="activity_tab" class="thread-collapsed">
   <section class="pane filters" id="pane_filters">
     <h3>Filters</h3>
     <input id="search" type="text" placeholder="search content/quotes" />
@@ -365,9 +379,14 @@
     <div class="event-list" id="event_list"></div>
   </section>
   <section class="pane" id="pane_thread">
-    <h3>Thread context</h3>
-    <div class="debug-note">Shows nearby events visible to the focused agent: public speech, direct private messages, offers/sales involving them, and supplier messages when relevant.</div>
-    <div class="thread" id="thread"></div>
+    <div class="pane-title-row">
+      <h3 id="thread_title">Focused agent context</h3>
+      <button class="copybtn" id="toggle_thread" type="button">open</button>
+    </div>
+    <div id="thread_context_body">
+      <div class="debug-note">Shows the selected event plus nearby events visible to that agent. Collapse this panel to read the global event stream.</div>
+      <div class="thread" id="thread"></div>
+    </div>
   </section>
   <section class="pane" id="pane_right">
     <h3>Vendor economy</h3>
@@ -551,6 +570,14 @@ function hydrate(D) {
   document.getElementById('btn_end').onclick = () => { scrub.value = scrub.max; scrub.dispatchEvent(new Event('input')); };
   document.getElementById('btn_play').onclick = togglePlay;
   document.getElementById('search').addEventListener('input', renderEventList);
+  const toggleThread = document.getElementById('toggle_thread');
+  if (toggleThread) {
+    toggleThread.addEventListener('click', () => {
+      const activity = document.getElementById('activity_tab');
+      const collapsed = activity.classList.toggle('thread-collapsed');
+      toggleThread.textContent = collapsed ? 'open' : 'collapse';
+    });
+  }
   ['net_sales','net_speech','net_supplier','net_public','net_min_strength'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('change', renderNetwork);
@@ -934,7 +961,7 @@ function eventSummary(e) {
   const c = e.channel;
   const action = e.action || '';
   const target = e.target_id || e.target ? `→ ${agentLabel(e.target_id || e.target)}` : '';
-  const txt = eventFullText(e).replace(/\s+/g, ' ').slice(0, 240);
+  const txt = eventFullText(e).replace(/\s+/g, ' ').trim();
   if (c === 'think') return `think: ${txt}`;
   if (c === 'public_speech' || c === 'private_speech' || c === 'supplier_speech') return txt;
   if (c === 'sale') return txt.split('\n')[0];
@@ -1064,7 +1091,7 @@ function judgeContextEvents(focusEv) {
   return Array.from(ids).map(eventByEventId).filter(Boolean);
 }
 
-function nearbyVisibleEvents(events, idx, focusAgent, beforeCount=6, afterCount=3, maxDistance=80) {
+function nearbyVisibleEvents(events, idx, focusAgent, beforeCount=10, afterCount=10, maxDistance=240) {
   const before = [];
   const after = [];
   for (let i = idx - 1; i >= 0 && before.length < beforeCount && (idx - i) <= maxDistance; i--) {
@@ -1129,7 +1156,7 @@ function renderThread(idx) {
   const explicitJudgeEvents = judgeContextEvents(focusEv);
   const seeds = explicitJudgeEvents.length ? explicitJudgeEvents : [focusEv];
   const neighborhood = [];
-  seeds.forEach(seed => nearbyVisibleEvents(events, seed.idx, focusAgent, 3, 2).forEach(e => neighborhood.push(e)));
+  seeds.forEach(seed => nearbyVisibleEvents(events, seed.idx, focusAgent, 10, 10).forEach(e => neighborhood.push(e)));
   const turns = dedupeThreadEvents(
     neighborhood.concat(explicitJudgeEvents, relatedDealEvents(focusEv, events), [focusEv]),
     idx
