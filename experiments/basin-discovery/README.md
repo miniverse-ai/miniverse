@@ -19,7 +19,7 @@ Source-of-truth research context:
 - `llm-bazaar/scripts/viewer/` - self-contained HTML run viewer renderer and template.
 - `llm-bazaar/scripts/tests/` - cost-controlled smoke scripts for Bazaar-specific behavior.
 - `llm-bazaar/scripts/matrix/` - older config-driven run generator, kept for reproducibility.
-- `llm-bazaar/results/` - local metric CSVs and calibration notes, ignored unless explicitly force-added.
+- `llm-bazaar/results/` - curated metric CSVs used for viewer/slides; scratch logs and `current-*` outputs stay ignored.
 
 Raw run outputs under `llm-bazaar/outputs/` and logs under `test-runs/` are ignored by default unless intentionally curated.
 
