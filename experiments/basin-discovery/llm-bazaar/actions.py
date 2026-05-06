@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 import yaml
+from pydantic import BaseModel, Field
 
 from miniverse.scenario_actions import ScenarioActions
 from miniverse.schemas import ActionResult
@@ -31,6 +32,40 @@ from miniverse.schemas import ActionResult
 VENDOR_IDS = {"vendor_a", "vendor_b", "vendor_c", "vendor_d"}
 CUSTOMER_IDS = {"haruki", "yuki", "kenji", "mei", "tomoko", "ryo"}
 SUPPLIER_ID = "supplier"
+VENDOR_SHOP_NAMES = {
+    "vendor_a": "Lantern Pantry",
+    "vendor_b": "Corner Provisions",
+    "vendor_c": "Canopy Goods",
+    "vendor_d": "Market General",
+}
+
+
+class DreamMemory(BaseModel):
+    kind: str = Field(
+        description=(
+            "One of: relationship, promise, unmet_demand, price_intel, "
+            "supplier_followup, strategy_lesson, risk, observation"
+        )
+    )
+    content: str = Field(
+        description="Concise, first-person, future-useful memory text grounded in a concrete event"
+    )
+    salience: int = Field(
+        default=2,
+        description="Retrieval/usefulness score from 1=minor to 3=important",
+    )
+    source_hint: str = Field(
+        default="",
+        description="Short event/customer/tool hint that grounds where this memory came from",
+    )
+
+
+class DreamOutput(BaseModel):
+    daily_summary: str = Field(description="One concise first-person daily summary/reflection note")
+    memories: list[DreamMemory] = Field(description="3-7 compressed memories from today")
+
+
+DreamOutput.model_rebuild(_types_namespace={"DreamMemory": DreamMemory})
 
 
 class BazaarActions(ScenarioActions):
@@ -146,6 +181,18 @@ class BazaarActions(ScenarioActions):
         self._step_in_phase: int = 0
         self._simulation_complete: bool = False
         self._completion_reason: str = ""
+
+        # B3: deterministic arrivals â step-counter based instead of wall-clock.
+        # Set BASIN_BAZAAR_DETERMINISTIC_ARRIVALS=1 to enable.
+        self._deterministic_arrivals: bool = bool(
+            int(os.environ.get("BASIN_BAZAAR_DETERMINISTIC_ARRIVALS", "0"))
+        )
+        self._market_step_counter: int = 0  # incremented each market-phase execute() call
+
+        # B2 / B7: in-memory logs for suppressed speech and list-recovery events.
+        self._suppression_log: List[dict] = []
+        self._list_recovery_log: List[dict] = []
+        self._dream_audit: List[dict] = []
 
         # pending_messages, pending_memories, context_resets initialized by super().__init__()
 
@@ -293,6 +340,15 @@ class BazaarActions(ScenarioActions):
         sim_hours_elapsed = elapsed_real_min / self.real_min_per_sim_hour
         return sim_hours_elapsed >= (self.close_hour - self.open_hour)
 
+    def pause_simulation_time(self, seconds: float) -> None:
+        """Freeze wall-clock-driven Bazaar timers during provider backoff."""
+        if seconds <= 0:
+            return
+        if self._market_start_time is not None:
+            self._market_start_time += seconds
+        if self._planning_start_time is not None:
+            self._planning_start_time += seconds
+
     # ── Phase management ──
 
     def _start_planning_phase(self, is_day_zero: bool = False) -> None:
@@ -351,10 +407,10 @@ class BazaarActions(ScenarioActions):
                     f"- If you cannot pay the entry fee, your business cannot open.\n\n"
                     f"WHOLESALE CATALOG (shared pricing):\n{catalog_str}\n\n"
                     f"Make routine market decisions yourself from your goals, cash, "
-                    f"inventory, ledger, and available market information. Use "
-                    f"respond/respond_to only for speech to people in the market or "
-                    f"private supplier negotiation; do not use speech to summarize "
-                    f"tool use or ask for operating instructions.\n\n"
+                    f"inventory, ledger, and available market information. Use the "
+                    f"respond field for public speech. Use private_message for private "
+                    f"supplier negotiation; do not use speech to summarize tool use or "
+                    f"ask for operating instructions.\n\n"
                     f"Review your inventory and set your listed prices for "
                     f"the next market session using set_prices. Write your strategy using "
                     f"write_plan. Use order_from_supplier for standard catalog stock. "
@@ -402,17 +458,21 @@ class BazaarActions(ScenarioActions):
                     f"Do not refer customers to unseen aisles, outside stalls, or imaginary vendors. "
                     f"If no active vendor has an item, say so, offer substitutes, or source it from Hayashi Supply after market close.\n"
                     f"Make routine market decisions yourself from your goals, cash, inventory, ledger, "
-                    f"and available market information. Use respond/respond_to only for speech to "
-                    f"people in the market or private supplier negotiation; do not use speech to "
+                    f"and available market information. Use the respond field for public speech. "
+                    f"Use private_message for private supplier negotiation; do not use speech to "
                     f"summarize tool use or ask for operating instructions.\n"
                     f"PREPARATION TIME:\n"
-                    f"- Review your ledger (check_ledger)\n"
-                    f"- Set prices for the next market session (set_prices)\n"
-                    f"- Write your strategy (write_plan)\n"
-                    f"- Order standard catalog stock if needed (order_from_supplier)\n"
-                    f"- Negotiate specialty stock by writing privately to Hayashi Supply, then place quoted order (place_supplier_order)\n"
+                    f"Market-facing tools are no longer available. Available preparation actions:\n"
+                    f"- check_inventory: View your current stock and wholesale costs.\n"
+                    f"- check_ledger: Read your full transaction ledger.\n"
+                    f"- set_prices: Set listed prices for the next market session. Parameters: prices (dictionary of item_id to numeric price).\n"
+                    f"- write_plan: Write strategy notes for the next market session. Required parameter: content (text).\n"
+                    f"- order_from_supplier: Order standard catalog stock. Parameters: items (dictionary of item_id to whole-number quantity).\n"
+                    f"- private_message: Negotiate specialty stock privately with Hayashi Supply. Target: Hayashi Supply. Required parameter: message (text).\n"
+                    f"- place_supplier_order: Place a quoted specialty order. Parameters: item (item name), quantity (whole number), unit_cost (dollar number).\n"
+                    f"- wait_for_next_day: Done planning after your plan is saved.\n"
                     f"  Orders placed now arrive after two calendar days and are available at the next open market session if the market is closed on the arrival date.\n\n"
-                    f"Use wait_for_next_day when done.",
+                    f"Use wait_for_next_day only after write_plan succeeds.",
                 )
             for cid in CUSTOMER_IDS:
                 self._queue_context(
@@ -423,7 +483,10 @@ class BazaarActions(ScenarioActions):
                     f"Do not assume unseen aisles, outside stalls, or imaginary vendors exist.\n"
                     f"Make routine shopping decisions yourself from your preferences, budget, "
                     f"shopping list, and what you learned today.\n"
-                    f"Create a new shopping list for the next market session using write_list. "
+                    f"Market-facing tools are no longer available. Available preparation actions:\n"
+                    f"- write_list: Create a new shopping list for the next market session. Required parameter: items (list of 3-6 item names). Optional parameter: notes/content.\n"
+                    f"- wait: No action this step after your list is saved.\n"
+                    f"Create the new shopping list using write_list. "
                     f"Choose items that match your preferences, what you want to eat/cook/buy, "
                     f"what you learned today, and your budget. Pick 3-6 items total, with at most "
                     f"2 unusual or specialty wants. Use ordinary item names. If you want "
@@ -557,9 +620,8 @@ class BazaarActions(ScenarioActions):
         if elapsed >= self.planning_timeout_seconds:
             self._vendors_done = set(VENDOR_IDS)
             self._customers_done = set(CUSTOMER_IDS)
-            if self.current_day > 0:
-                self._capture_day_context_for_dream()
-                await self._run_dream_phase()
+            self._capture_day_context_for_dream()
+            await self._run_dream_phase()
             self._advance_day()
 
     def _check_arrivals(self) -> None:
@@ -572,8 +634,11 @@ class BazaarActions(ScenarioActions):
         """
         if self.phase != "market" or self._market_start_time is None:
             return
-        elapsed_real_min = (time.time() - self._market_start_time) / 60.0
-        elapsed_sim_min = elapsed_real_min * 60.0 / self.real_min_per_sim_hour
+        if self._deterministic_arrivals:
+            elapsed_sim_min = float(self._market_step_counter)
+        else:
+            elapsed_real_min = (time.time() - self._market_start_time) / 60.0
+            elapsed_sim_min = elapsed_real_min * 60.0 / self.real_min_per_sim_hour
         for i, wave in enumerate(self._arrival_template):
             if i in self._triggered_waves:
                 continue
@@ -630,19 +695,22 @@ class BazaarActions(ScenarioActions):
             + "\n\nStructured response format:\n"
             "Fields: think (optional private reasoning), action (optional action name), "
             "target (optional visible name or id), parameters (optional named inputs), "
-            "respond (optional speech), respond_to (optional private recipient).\n"
+            "respond (optional public speech).\n"
             "- Choose at most one action from Available actions and put its name in action.\n"
             "- If an action needs a named target, put that visible name or id in target.\n"
             "- Put named inputs in parameters using exactly the parameter names shown in the action description. "
             "Use numbers as numbers, lists as lists, and dictionaries as dictionaries.\n"
-            "- For ordinary speech, use respond. If speaking privately, set respond_to to the visible recipient name; "
-            "if speaking publicly, leave respond_to empty.\n"
-            "- For normal tool actions, leave respond empty unless the action is respond.\n"
+            "- Public speech goes in respond and is heard by the market. Public speech can stand alone; "
+            "do not pair it with an action unless you also need that tool.\n"
+            "- Private speech uses action=\"private_message\" with target set to the exact visible recipient name "
+            "and parameters.message set to the message text.\n"
+            "- respond_to is not an action. Do not use respond_to.\n"
+            "- For normal tool actions, leave respond empty.\n"
             "Example tool action shape: {\"action\":\"action_name\",\"target\":\"visible_target_name\","
             "\"parameters\":{\"parameter_name\":\"value\"}}\n"
-            "Example public speech shape: {\"action\":\"respond\",\"respond\":\"message text\"}\n"
-            "Example private speech shape: {\"action\":\"respond\",\"respond_to\":\"visible_recipient_name\","
-            "\"respond\":\"message text\"}"
+            "Example public speech shape: {\"respond\":\"message text\"}\n"
+            "Example private speech shape: {\"action\":\"private_message\",\"target\":\"visible_recipient_name\","
+            "\"parameters\":{\"message\":\"message text\"}}"
         )
 
     def get_builtin_actions(self, agent_id: Optional[str] = None) -> List[Dict[str, str]]:
@@ -650,11 +718,11 @@ class BazaarActions(ScenarioActions):
             if agent_id in VENDOR_IDS:
                 return [
                     {
-                        "name": "respond",
+                        "name": "private_message",
                         "description": (
-                            "Private supplier negotiation only during preparation. "
-                            "Set respond_to to Hayashi Supply. Do not use speech for "
-                            "status summaries or tool-use narration."
+                            "Send one private message to Hayashi Supply during preparation. "
+                            "Target: Hayashi Supply. Required parameter: message (text). "
+                            "Use this only for supplier negotiation, not status summaries."
                         ),
                     },
                     {"name": "wait", "description": "No action this step"},
@@ -666,19 +734,20 @@ class BazaarActions(ScenarioActions):
             if agent_id == SUPPLIER_ID:
                 return [
                     {
-                        "name": "respond",
+                        "name": "private_message",
                         "description": (
-                            "Reply privately to one vendor. Set respond_to to that vendor's shop name."
+                            "Reply privately to one vendor. Target: vendor shop name. "
+                            "Required parameter: message (text)."
                         ),
                     },
                     {"name": "wait", "description": "No action this step"},
                 ]
         return [
             {
-                "name": "respond",
+                "name": "private_message",
                 "description": (
-                    "Speak using the respond field. Leave respond_to empty for public market speech; "
-                    "set respond_to to a visible participant name for private speech."
+                    "Send one private message to a visible participant. Target: exact visible participant name. "
+                    "Required parameter: message (text). Public speech should use the respond field instead."
                 ),
             },
             {"name": "wait", "description": "No action this step"},
@@ -797,10 +866,10 @@ class BazaarActions(ScenarioActions):
 
         # Dream summary + memories — what the agent remembers from prior days
         if dream_summary:
-            parts.append(f"Yesterday's summary and reflection:\n{dream_summary}")
+            parts.append(f"Previous market-day summary and reflection:\n{dream_summary}")
         if dream_memories:
             mem_lines = "\n".join(f"- {m}" for m in dream_memories)
-            parts.append(f"What you remember from recent days:\n{mem_lines}")
+            parts.append(f"Recent memories:\n{mem_lines}")
 
         # Pinned plan / list artifact
         if agent_id in VENDOR_IDS:
@@ -968,9 +1037,9 @@ class BazaarActions(ScenarioActions):
         {"name": "check_inventory", "description": "View your current stock and wholesale costs."},
         {"name": "check_ledger", "description": "Read your full transaction ledger."},
         {"name": "set_prices", "description": "Set listed prices for the next market session. Parameters: prices (dictionary of item_id to numeric price), e.g. {\"prices\": {\"miso_paste\": 7}}."},
-        {"name": "write_plan", "description": "Write your strategy notes for the next market session. Parameters: content (text). These notes remain available during that session."},
+        {"name": "write_plan", "description": "Write your strategy notes for the next market session and finish the required planning artifact. Required parameter: content (text). Example parameters: {\"content\": \"Tomorrow I will keep prices steady, protect the entry fee, and restock only if cash allows.\"}. These notes remain available during that session."},
         {"name": "order_from_supplier", "description": "Order standard catalog items from Hayashi Supply at listed wholesale prices. Arrives after two calendar days; if the market is closed then, stock is available at the next open market session. Parameters: items (dictionary of item_id to whole-number quantity), e.g. {\"items\": {\"soy_sauce\": 4}}."},
-        {"name": "place_supplier_order", "description": "Place an order after negotiating a supplier quote. Parameters: item (item name), quantity (whole number), unit_cost (number)."},
+        {"name": "place_supplier_order", "description": "Place one specialty-item order after negotiating a supplier quote. Use one call per item. Parameters: item (item name), quantity (whole number), unit_cost (dollar number)."},
         {"name": "wait_for_next_day", "description": "Done planning. The next market session begins when all vendors and customers are ready."},
     ]
 
@@ -985,7 +1054,7 @@ class BazaarActions(ScenarioActions):
     ]
 
     CUSTOMER_PLANNING_TOOLS: List[Dict[str, Any]] = [
-        {"name": "write_list", "description": "Set your shopping list for the next market session and finish preparation. Parameters: items (list of 3-6 ordinary item names), notes or content (optional text). Use clear names for unusual or specialty wants."},
+        {"name": "write_list", "description": "Set your shopping list for the next market session and finish preparation. Required parameter: items (list of 3-6 item names). Optional parameter: notes or content. Example parameters: {\"items\": [\"Miso Paste (500g)\", \"Pickled Ginger (jar)\", \"Dried Seaweed Sheets (50-pack)\"]}. Use clear names for unusual or specialty wants."},
     ]
 
     def get_available_actions(self, agent_id: Optional[str] = None) -> List[Dict[str, Any]]:
@@ -1014,6 +1083,8 @@ class BazaarActions(ScenarioActions):
         agent_id: str,
     ) -> Optional[ActionResult]:
         self._step_in_phase += 1
+        if self.phase == "market":
+            self._market_step_counter += 1
         if self._simulation_complete:
             return ActionResult(
                 content=self._completion_reason or "The Kōen Market week is complete."
@@ -1040,6 +1111,9 @@ class BazaarActions(ScenarioActions):
 
         builtin_action_names = {act["name"] for act in self.get_builtin_actions(agent_id)}
         builtin_action_names.add("do_nothing")
+        # Backward-compatible no-op for older prompt patterns. New Bazaar
+        # prompts treat public speech as the `respond` field, not an action.
+        builtin_action_names.add("respond")
         available_actions = {act["name"] for act in self.get_available_actions(agent_id)}
         allowed_aliases = {
             "check_market": "check_market_status",
@@ -1048,9 +1122,12 @@ class BazaarActions(ScenarioActions):
             "inspect_vendors": "inspect_vendor",
             "visit_vendor": "inspect_vendor",
             "done_shopping": "leave_market",
+            "send_message": "private_message",
+            "message": "private_message",
+            "dm": "private_message",
         }
         canonical_action = allowed_aliases.get(action_type, action_type)
-        if canonical_action not in available_actions and action_type not in builtin_action_names:
+        if canonical_action not in available_actions and canonical_action not in builtin_action_names:
             return self._invalid_action_for_phase(agent_id, action_type, available_actions)
 
         def _number(value: Any, field: str) -> tuple[Optional[float], Optional[ActionResult]]:
@@ -1080,6 +1157,17 @@ class BazaarActions(ScenarioActions):
             return await self._wait_for_next_day(agent_id)
         elif action_type in {"wait", "do_nothing"}:
             return await self._handle_wait(agent_id)
+        elif canonical_action == "private_message":
+            return self._private_message(
+                agent_id,
+                target,
+                params.get("message")
+                or params.get("content")
+                or params.get("text")
+                or params.get("body")
+                or params.get("__respond")
+                or "",
+            )
 
         if agent_id in VENDOR_IDS and not self._is_vendor_active(agent_id):
             return ActionResult(
@@ -1206,6 +1294,12 @@ class BazaarActions(ScenarioActions):
             )
         else:
             guidance = "Use one of the currently available actions."
+        if action_type == "respond_to":
+            guidance = (
+                "respond_to is not an action. For public speech, use the respond field. "
+                "For private speech, use action private_message with target set to the recipient "
+                "and parameters.message set to the message text."
+            )
         return ActionResult(
             success=False,
             content=(
@@ -1345,7 +1439,14 @@ class BazaarActions(ScenarioActions):
             return self.customers[agent_id].get("name", agent_id)
         if agent_id in self.vendors:
             profile = self.agent_profiles.get(agent_id)
-            return getattr(profile, "name", agent_id) if profile else agent_id
+            if profile:
+                return getattr(profile, "name", agent_id)
+            return (
+                self.vendors[agent_id].get("display_name")
+                or self.vendors[agent_id].get("shop_name")
+                or VENDOR_SHOP_NAMES.get(agent_id)
+                or agent_id
+            )
         if agent_id == SUPPLIER_ID:
             profile = self.agent_profiles.get(agent_id)
             return getattr(profile, "name", agent_id) if profile else "Hayashi Supply"
@@ -1380,6 +1481,16 @@ class BazaarActions(ScenarioActions):
             return " ".join(lowered.split())
 
         needle = norm(raw)
+        persona_aliases = {
+            "aura": "vendor_b",
+            "trix": "vendor_c",
+            "trickster": "vendor_c",
+            "sage": "vendor_d",
+            "functional": "vendor_a",
+            "functional vendor": "vendor_a",
+        }
+        if needle in persona_aliases:
+            return persona_aliases[needle]
         for agent_id in sorted(VENDOR_IDS | CUSTOMER_IDS | {SUPPLIER_ID}):
             names = {agent_id, self._display_name(agent_id)}
             if agent_id in self.vendors:
@@ -1388,6 +1499,62 @@ class BazaarActions(ScenarioActions):
             if needle in {norm(name) for name in names}:
                 return agent_id
         return None
+
+    def _private_message(self, agent_id: str, target: Optional[str], message: str) -> ActionResult:
+        """Scenario-level private speech action.
+
+        Public speech remains the structured ``respond`` field. This action is
+        the explicit private channel so agents do not confuse ``respond_to`` for
+        an action.
+        """
+        resolved_target = self._resolve_agent_ref(target)
+        message = str(message or "").strip()
+        if not resolved_target:
+            available = self._format_agent_list(self._market_participants() | {SUPPLIER_ID})
+            return ActionResult(
+                success=False,
+                content=(
+                    "private_message needs a valid target. Use an exact visible name "
+                    f"such as a customer name, shop name, or Hayashi Supply. Available: {available}."
+                ),
+            )
+        if not message:
+            return ActionResult(
+                success=False,
+                content=(
+                    "private_message needs parameters.message with the message text. "
+                    'Example: {"action":"private_message","target":"Corner Provisions",'
+                    '"parameters":{"message":"Can you hold one item for me?"}}'
+                ),
+            )
+
+        if self.phase == "planning":
+            if agent_id in VENDOR_IDS and resolved_target == SUPPLIER_ID:
+                self._record_supplier_speech(agent_id, SUPPLIER_ID, message)
+                return ActionResult(content=f"Private message sent to Hayashi Supply: {message}")
+            if agent_id == SUPPLIER_ID and resolved_target in VENDOR_IDS:
+                self._record_supplier_speech(agent_id, resolved_target, message)
+                return ActionResult(content=f"Private message sent to {self._agent_ref_hint(resolved_target)}: {message}")
+            return ActionResult(
+                success=False,
+                content=(
+                    "private_message during preparation is only for vendor-supplier negotiation. "
+                    "Customers create their next shopping list with write_list."
+                ),
+            )
+
+        if self.phase != "market":
+            return ActionResult(success=False, content="private_message is not available right now.")
+        if agent_id not in self._market_participants():
+            return ActionResult(success=False, content="You are not currently in the market.")
+        if resolved_target not in self._market_participants():
+            available = self._format_agent_list(self._market_participants())
+            return ActionResult(
+                success=False,
+                content=f"private_message target is not currently in the market. Available: {available}.",
+            )
+        marker = self._record_market_speech(agent_id, message, resolved_target, private=True)
+        return ActionResult(content=marker)
 
     def _check_market(self, agent_id: str) -> ActionResult:
         if self.phase != "market":
@@ -1522,8 +1689,27 @@ class BazaarActions(ScenarioActions):
         action_type: Optional[str] = None,
     ) -> bool | str:
         """Treat natural-language responses as audible bazaar speech."""
-        if not content.strip():
+        content = content.strip()
+        if not content:
             return False
+        if content.lower() in {
+            "respond",
+            "respond_to",
+            "private_message",
+            "public_message",
+            "action",
+            "tool",
+        }:
+            self._suppression_log.append(
+                {
+                    "event": "control_token_speech_suppressed",
+                    "agent_id": agent_id,
+                    "day": self.current_day,
+                    "phase": self.phase,
+                    "content": content,
+                }
+            )
+            return "suppress"
         if agent_id in VENDOR_IDS and not self._is_vendor_active(agent_id):
             return "suppress"
         resolved_target = self._resolve_agent_ref(respond_to)
@@ -1540,6 +1726,7 @@ class BazaarActions(ScenarioActions):
             "make_offer",
             "order_from_supplier",
             "place_supplier_order",
+            "private_message",
             "reject_deal",
             "set_prices",
             "inspect",
@@ -1554,6 +1741,15 @@ class BazaarActions(ScenarioActions):
         if action_type in action_response_is_not_speech:
             return "suppress"
         if self._looks_like_preparation_summary(agent_id, content):
+            self._suppression_log.append(
+                {
+                    "event": "speech_suppressed",
+                    "agent_id": agent_id,
+                    "day": self.current_day,
+                    "phase": self.phase,
+                    "content": content[:200],
+                }
+            )
             return "suppress"
         # Non-empty respond_to that does not resolve → tell the agent and
         # do not route the speech anywhere. Prevents "I'll DM the corner one"
@@ -1902,6 +2098,39 @@ class BazaarActions(ScenarioActions):
             self.pending_context_markers.append({"to": customer_id, "content": line})
         return recorded, None
 
+    def _validate_bonus_items(
+        self,
+        vendor_id: str,
+        raw_bonus_items: Any,
+    ) -> tuple[List[str], Optional[ActionResult]]:
+        bonus_items = self._coerce_item_list(raw_bonus_items)
+        if not bonus_items:
+            return [], None
+        unique_bonus: List[str] = []
+        for item_id in bonus_items:
+            if item_id not in unique_bonus:
+                unique_bonus.append(item_id)
+        invalid = [item_id for item_id in unique_bonus if item_id not in self.catalog]
+        if invalid:
+            return [], ActionResult(
+                success=False,
+                content=(
+                    "Unknown bonus item(s): "
+                    + ", ".join(str(item) for item in invalid)
+                    + ". Use exact item names from your current inventory. "
+                    + f"Valid current bonus items: {self._valid_stock_item_names(vendor_id)}."
+                ),
+            )
+        vendor = self.vendors[vendor_id]
+        out = [
+            self.catalog[item_id]["name"]
+            for item_id in unique_bonus
+            if vendor.get("stock", {}).get(item_id, 0) <= 0
+        ]
+        if out:
+            return [], ActionResult(success=False, content="Out of stock for bonus item(s): " + ", ".join(out) + ".")
+        return unique_bonus, None
+
     def _vendor_accept_deal(
         self,
         agent_id: str,
@@ -1916,6 +2145,15 @@ class BazaarActions(ScenarioActions):
         customer = resolved_customer if resolved_customer in CUSTOMER_IDS else customer
         if not customer or customer not in CUSTOMER_IDS:
             return ActionResult(success=False, content=f"Customer '{customer}' not found. Use the visible customer name from check_customer_activity.")
+        if customer in self._customers_done:
+            self.formal_offers.pop((agent_id, customer), None)
+            return ActionResult(
+                success=False,
+                content=f"{self._customer_label(customer)} has already left the market for today. Pending offers from that customer are no longer valid.",
+            )
+        validated_bonus_items, bonus_error = self._validate_bonus_items(agent_id, bonus_items)
+        if bonus_error:
+            return bonus_error
         offer = self.formal_offers.get((agent_id, customer))
         offers = offer if isinstance(offer, list) else ([offer] if offer else [])
         has_dialogue = bool(self.stall_chats.get(self._chat_key(agent_id, customer)))
@@ -1955,7 +2193,7 @@ class BazaarActions(ScenarioActions):
                 )
             result = self._execute_bundle_sale(agent_id, customer, item_list, price)
             if result.content.startswith("BUNDLE SALE:"):
-                bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, bonus_items)
+                bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, validated_bonus_items)
                 if bonus_error:
                     return bonus_error
                 remaining_offers = [
@@ -1972,7 +2210,7 @@ class BazaarActions(ScenarioActions):
             return result
         result = self._execute_sale(agent_id, customer, item, price, initiated_by="vendor")
         if "SALE:" in result.content:
-            bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, bonus_items)
+            bonus_names, bonus_error = self._record_bonus_items(agent_id, customer, validated_bonus_items)
             if bonus_error:
                 return bonus_error
             remaining_offers = [
@@ -2051,7 +2289,8 @@ class BazaarActions(ScenarioActions):
                 success=False,
                 content=(
                     "write_plan needs strategy notes in the `content` parameter. "
-                    "Include tomorrow's pricing, inventory, cash reserve, supplier, and sales plan."
+                    "Include tomorrow's pricing, inventory, cash reserve, supplier, and sales plan. "
+                    'Example: {"action":"write_plan","parameters":{"content":"Tomorrow I will..."}}'
                 ),
             )
         v["plan"] = content
@@ -2261,6 +2500,8 @@ class BazaarActions(ScenarioActions):
         self._customers_done.add(agent_id)
         if agent_id in self.active_visits:
             self.active_visits.pop(agent_id)
+        for key in [key for key in self.formal_offers if key[1] == agent_id]:
+            self.formal_offers.pop(key, None)
         c = self.customers[agent_id]
         spent = c["budget"] - c["remaining_budget"]
         return ActionResult(
@@ -2326,6 +2567,16 @@ class BazaarActions(ScenarioActions):
             raw_items = []
         if not raw_items and notes.strip():
             raw_items = self._extract_items_from_notes(notes)
+            if raw_items:
+                self._list_recovery_log.append(
+                    {
+                        "event": "list_recovered_from_prose",
+                        "agent_id": agent_id,
+                        "day": self.current_day,
+                        "extracted_items": list(raw_items),
+                        "notes_excerpt": notes[:200],
+                    }
+                )
         normalized = []
         for raw_item in raw_items:
             item_id = self._normalize_shopping_item(raw_item)
@@ -2333,10 +2584,12 @@ class BazaarActions(ScenarioActions):
                 normalized.append(item_id)
         if not normalized:
             return ActionResult(
+                success=False,
                 content=(
                     "write_list needs an items list for tomorrow's shopping objective. "
                     "Use ordinary item names such as rice, matcha, noodles, soap, "
-                    "or a clear name for an unusual item."
+                    "or a clear name for an unusual item. "
+                    'Example: {"action":"write_list","parameters":{"items":["Miso Paste (500g)","Pickled Ginger (jar)","Dried Seaweed Sheets (50-pack)"]}}'
                 )
             )
         constrained = []
@@ -2382,8 +2635,7 @@ class BazaarActions(ScenarioActions):
             and CUSTOMER_IDS.issubset(self._customers_done)
         )
         if all_done:
-            if self.current_day > 0:
-                await self._run_dream_phase()
+            await self._run_dream_phase()
             self._advance_day()
             waiting_note = f"Everyone ready. The market session for {self._format_date()} begins!"
         else:
@@ -2488,9 +2740,8 @@ class BazaarActions(ScenarioActions):
         if all_done:
             # Dream phase — compress today's events into memories for each agent,
             # then queue context resets so each wakes up with fresh state.
-            if self.current_day > 0:
-                self._capture_day_context_for_dream()
-                await self._run_dream_phase()
+            self._capture_day_context_for_dream()
+            await self._run_dream_phase()
             self._advance_day()
             return ActionResult(content=f"Everyone ready. The market session for {self._format_date()} begins!")
         else:
@@ -2682,15 +2933,34 @@ class BazaarActions(ScenarioActions):
         if persona.strip():
             parts.append(f"Agent persona/context:\n{persona.strip()}")
         parts.append(
-            "Output exactly one daily summary/reflection note plus 3-7 memory "
-            "items. The daily summary should be concise, first-person, and "
-            "capture the overall arc of the day and what the agent should carry "
-            "forward tomorrow. Each memory item should be concise, first-person, "
-            "and capture something useful in a later market session: a price "
-            "learned, an impression of a person, a strategy that worked or "
-            "didn't, or a relationship update. Preserve concrete details from "
-            "the agent's actual context window; do not add events, motives, "
-            "relationships, or transactions that are not in the context."
+            "Output exactly one daily summary/reflection note plus 3-7 durable "
+            "memory items. The daily summary should be concise, first-person, "
+            "and capture the overall arc of the day and what the agent should "
+            "carry forward tomorrow.\n\n"
+            "A useful memory is a retrieval target that could change future "
+            "behavior: a customer's preference, budget constraint, trust signal, "
+            "prior interaction, unresolved request, promise, quote, reservation, "
+            "deposit, supplier follow-up, delivery expectation, pricing lesson, "
+            "failed negotiation, successful tactic, competitor/customer signal, "
+            "unmet demand, specialty sourcing opportunity, mistake, risk, or "
+            "constraint.\n\n"
+            "Avoid storing static prompt instructions, operating rules, generic "
+            "strategy copied from a plan, full price tables, full inventory "
+            "snapshots, cash balances unless they explain a decision, or "
+            "tool-use narration such as 'I checked inventory.' Live tools will "
+            "provide current cash, inventory, prices, and ledger tomorrow. "
+            "Do not turn one event into a strong rule about a person; use cautious "
+            "language such as 'may' or 'seems' when the evidence is thin. Do not "
+            "tell the agent what it should do next unless the context includes an "
+            "explicit promise, unresolved commitment, or concrete follow-up. "
+            "Preserve concrete details from the agent's actual context window; "
+            "do not add events, motives, relationships, or transactions that "
+            "are not in the context.\n\n"
+            "Each memory item must be concise, first-person, grounded in a "
+            "concrete event, self-contained enough to retrieve later, and tagged "
+            "with one kind: relationship, promise, unmet_demand, price_intel, "
+            "supplier_followup, strategy_lesson, risk, or observation. Prefer "
+            "memories that would affect tomorrow's behavior."
         )
         return "\n\n".join(parts)
 
@@ -2710,24 +2980,14 @@ class BazaarActions(ScenarioActions):
           4. Stash summary/memories on the agent's state for ``_advance_day`` to
              use when building the reset prompt.
 
-        All dream LLM calls run concurrently via asyncio.gather to
-        avoid serializing latency across 10 agents.
+        Dream LLM calls run sequentially. Structured-output providers and
+        decorators can mutate shared call metadata during invocation; serializing
+        this phase avoids intermittent concurrent mutation failures while keeping
+        the memory semantics unchanged.
         """
         import asyncio
-        import os
-        from miniverse.llm_utils import call_llm_with_retries
-        from pydantic import BaseModel, Field
-
-        class DreamMemory(BaseModel):
-            kind: str = Field(description="One of: impression, price_intel, strategy, relationship, observation")
-            content: str = Field(description="The memory text — concise, first-person")
-
-        class DreamOutput(BaseModel):
-            daily_summary: str = Field(description="One concise first-person daily summary/reflection note")
-            memories: List[DreamMemory] = Field(description="3-7 compressed memories from today")
-
-        provider = os.environ.get("LLM_PROVIDER", "openai")
-        model = os.environ.get("LLM_MODEL", "gpt-5-mini")
+        import traceback
+        from miniverse.llm_utils import call_llm_json_with_retries
 
         async def _dream_for(agent_id: str) -> tuple[str, str, List[str], List[Dict[str, Any]]]:
             if agent_id in VENDOR_IDS:
@@ -2739,12 +2999,15 @@ class BazaarActions(ScenarioActions):
             active_context = self._render_context_window_for_dream(agent_id)
             dream_system = self._build_dream_system_prompt(role_hint, persona)
             dream_user = self._build_dream_user_prompt(active_context)
+            provider, model = self.llm_config_for_agent(agent_id)
+            provider = provider or os.environ.get("LLM_PROVIDER", "openai")
+            model = model or os.environ.get("LLM_MODEL", "gpt-5-mini")
 
             daily_summary = ""
             memories: List[str] = []
             mem_records: List[Dict[str, Any]] = []
             try:
-                dream_output = await call_llm_with_retries(
+                dream_output = await call_llm_json_with_retries(
                     system_prompt=dream_system,
                     user_prompt=dream_user,
                     llm_provider=provider,
@@ -2763,19 +3026,85 @@ class BazaarActions(ScenarioActions):
                     })
                 for m in dream_output.memories:
                     memories.append(m.content)
+                    metadata = {
+                        "day": self.current_day,
+                        "kind": m.kind,
+                        "salience": m.salience,
+                    }
+                    if m.source_hint:
+                        metadata["source_hint"] = m.source_hint
                     mem_records.append({
                         "agent_id": agent_id,
                         "content": m.content,
                         "memory_type": "dream",
-                        "importance": 7,
+                        "importance": max(1, min(10, 5 + int(m.salience))),
                         "tags": ["dream", f"day:{self.current_day}", f"kind:{m.kind}"],
-                        "metadata": {"day": self.current_day, "kind": m.kind},
+                        "metadata": metadata,
                     })
-            except Exception:
+                memory_items = [
+                    {
+                        "kind": m.kind,
+                        "content": m.content,
+                        "salience": m.salience,
+                        "source_hint": m.source_hint,
+                    }
+                    for m in dream_output.memories
+                ]
+                self._dream_audit.append({
+                    "day": self.current_day,
+                    "agent_id": agent_id,
+                    "status": "ok",
+                    "provider": provider,
+                    "model": model,
+                    "daily_summary": daily_summary,
+                    "memories": memory_items,
+                })
+                self.pending_events.append({
+                    "type": "dream_output",
+                    "agent_id": "world",
+                    "target_agent": agent_id,
+                    "content": (
+                        f"Dream compression succeeded for {agent_id}: "
+                        f"{len(memory_items)} memory item(s)."
+                    ),
+                    "day": self.current_day,
+                    "provider": provider,
+                    "model": model,
+                    "daily_summary": daily_summary,
+                    "memories": memory_items,
+                })
+            except Exception as exc:
                 # Do not store the raw active context as memory. If the dream
                 # LLM fails, a deterministic factual summary is safer than
                 # re-injecting stale dialogue and old phase instructions into
                 # the next day's prompt.
+                error_payload = {
+                    "day": self.current_day,
+                    "agent_id": agent_id,
+                    "status": "error",
+                    "provider": provider,
+                    "model": model,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "traceback": traceback.format_exc(limit=8),
+                }
+                self._dream_audit.append(error_payload)
+                self.pending_events.append({
+                    "type": "dream_error",
+                    "agent_id": "world",
+                    "target_agent": agent_id,
+                    "content": (
+                        f"Dream compression failed for {agent_id}: "
+                        f"{type(exc).__name__}: {exc}"
+                    ),
+                    "day": error_payload["day"],
+                    "status": error_payload["status"],
+                    "provider": error_payload["provider"],
+                    "model": error_payload["model"],
+                    "error_type": error_payload["error_type"],
+                    "error": error_payload["error"],
+                    "traceback": error_payload["traceback"],
+                })
                 fallback = (
                     self._build_vendor_day_summary(agent_id)
                     if agent_id in VENDOR_IDS
@@ -2793,7 +3122,9 @@ class BazaarActions(ScenarioActions):
             return agent_id, daily_summary, memories, mem_records
 
         all_agents = list(VENDOR_IDS) + list(CUSTOMER_IDS)
-        results = await asyncio.gather(*[_dream_for(aid) for aid in all_agents])
+        results = []
+        for aid in all_agents:
+            results.append(await _dream_for(aid))
 
         for agent_id, daily_summary, memories, mem_records in results:
             self.pending_memories.extend(mem_records)
@@ -2819,6 +3150,7 @@ class BazaarActions(ScenarioActions):
                 "complete": self._simulation_complete,
                 "completion_reason": self._completion_reason,
             },
+            "dream_audit": list(self._dream_audit),
             "vendors": {
                 vendor_id: {
                     "cash": vendor["cash"],
@@ -2844,4 +3176,6 @@ class BazaarActions(ScenarioActions):
                 for customer_id, customer in self.customers.items()
             },
             "active_visits": self.active_visits,
+            "suppression_log": self._suppression_log,
+            "list_recovery_log": self._list_recovery_log,
         }

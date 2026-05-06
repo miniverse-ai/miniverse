@@ -90,8 +90,7 @@ agents:
         substitutes, or source it from Hayashi Supply after market close.
 
         OPERATING RULES:
-        - Use tools for market actions. Use respond for public messages and
-          respond_to for private messages to people in the market. Do not
+        - Use tools for market actions. Anything you put in the respond field is public speech heard in the market. For private speech, use the private_message action with the exact visible recipient name. Do not
           narrate actions, summarize tool use, or imagine events that
           haven't happened. Make routine market decisions yourself from
           your goals, cash, inventory, ledger, and available market
@@ -102,18 +101,16 @@ agents:
           During preparation, use set_prices, write_plan, and
           order_from_supplier for standard catalog restock. If you
           need specialty stock, write privately to Hayashi Supply using
-          respond_to="Hayashi Supply" and use place_supplier_order after
-          you agree on a quote. Customers may ask for goods you do not
+          private_message with target="Hayashi Supply", then use
+          place_supplier_order after you agree on a quote. Customers may ask for goods you do not
           currently carry; after market close, supplier orders arrive after
           two calendar days and are available at the next open market
           session if they arrive while the market is closed. Negotiation
           with the supplier is normal. Then
           call wait_for_next_day ONCE.
           During open-market time, use check_customer_activity to see
-          which customers are engaging your business, then talk naturally using respond.
-          To speak privately to one customer, set respond_to to that
-          customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers. Formal
+          which customers are engaging your business, then talk naturally using the respond field for public speech.
+          To speak privately, use private_message with the customer's exact visible name. Use accept_deal / reject_deal for formal offers. Formal
           deals can only complete real items from your current inventory;
           use the exact item names shown by your inventory and customer
           activity tools. If you include a free promotional item, put that
@@ -162,8 +159,7 @@ agents:
         substitutes, or source it from Hayashi Supply after market close.
 
         OPERATING RULES:
-        - Use tools for market actions. Use respond for public messages and
-          respond_to for private messages to people in the market. Do not
+        - Use tools for market actions. Anything you put in the respond field is public speech heard in the market. For private speech, use the private_message action with the exact visible recipient name. Do not
           narrate actions, summarize tool use, or imagine events that
           haven't happened. Make routine market decisions yourself from
           your goals, cash, inventory, ledger, and available market
@@ -174,18 +170,16 @@ agents:
           During preparation, use set_prices, write_plan, and
           order_from_supplier for standard catalog restock. If you
           need specialty stock, write privately to Hayashi Supply using
-          respond_to="Hayashi Supply" and use place_supplier_order after
-          you agree on a quote. Customers may ask for goods you do not
+          private_message with target="Hayashi Supply", then use
+          place_supplier_order after you agree on a quote. Customers may ask for goods you do not
           currently carry; after market close, supplier orders arrive after
           two calendar days and are available at the next open market
           session if they arrive while the market is closed. Negotiation
           with the supplier is normal. Then
           call wait_for_next_day ONCE.
           During open-market time, use check_customer_activity to see
-          which customers are engaging your business, then talk naturally using respond.
-          To speak privately to one customer, set respond_to to that
-          customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers. Formal
+          which customers are engaging your business, then talk naturally using the respond field for public speech.
+          To speak privately, use private_message with the customer's exact visible name. Use accept_deal / reject_deal for formal offers. Formal
           deals can only complete real items from your current inventory;
           use the exact item names shown by your inventory and customer
           activity tools. If you include a free promotional item, put that
@@ -234,8 +228,7 @@ agents:
         Supply after market close.
 
         OPERATING RULES:
-        - Use tools for market actions. Use respond for public messages and
-          respond_to for private messages to people in the market. Do not
+        - Use tools for market actions. Anything you put in the respond field is public speech heard in the market. For private speech, use the private_message action with the exact visible recipient name. Do not
           narrate actions, summarize tool use, or imagine events that
           haven't happened. Make routine market decisions yourself from
           your goals, cash, inventory, ledger, and available market
@@ -246,18 +239,16 @@ agents:
           During preparation, use set_prices, write_plan, and
           order_from_supplier for standard catalog restock. If you
           need specialty stock, write privately to Hayashi Supply using
-          respond_to="Hayashi Supply" and use place_supplier_order after
-          you agree on a quote. Customers may ask for goods you do not
+          private_message with target="Hayashi Supply", then use
+          place_supplier_order after you agree on a quote. Customers may ask for goods you do not
           currently carry; after market close, supplier orders arrive after
           two calendar days and are available at the next open market
           session if they arrive while the market is closed. Negotiation
           with the supplier is normal. Then
           call wait_for_next_day ONCE.
           During open-market time, use check_customer_activity to see
-          which customers are engaging your business, then talk naturally using respond.
-          To speak privately to one customer, set respond_to to that
-          customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers. Formal
+          which customers are engaging your business, then talk naturally using the respond field for public speech.
+          To speak privately, use private_message with the customer's exact visible name. Use accept_deal / reject_deal for formal offers. Formal
           deals can only complete real items from your current inventory;
           use the exact item names shown by your inventory and customer
           activity tools. If you include a free promotional item, put that
@@ -306,8 +297,7 @@ agents:
         Supply after market close.
 
         OPERATING RULES:
-        - Use tools for market actions. Use respond for public messages and
-          respond_to for private messages to people in the market. Do not
+        - Use tools for market actions. Anything you put in the respond field is public speech heard in the market. For private speech, use the private_message action with the exact visible recipient name. Do not
           narrate actions, summarize tool use, or imagine events that
           haven't happened. Make routine market decisions yourself from
           your goals, cash, inventory, ledger, and available market
@@ -318,18 +308,16 @@ agents:
           During preparation, use set_prices, write_plan, and
           order_from_supplier for standard catalog restock. If you
           need specialty stock, write privately to Hayashi Supply using
-          respond_to="Hayashi Supply" and use place_supplier_order after
-          you agree on a quote. Customers may ask for goods you do not
+          private_message with target="Hayashi Supply", then use
+          place_supplier_order after you agree on a quote. Customers may ask for goods you do not
           currently carry; after market close, supplier orders arrive after
           two calendar days and are available at the next open market
           session if they arrive while the market is closed. Negotiation
           with the supplier is normal. Then
           call wait_for_next_day ONCE.
           During open-market time, use check_customer_activity to see
-          which customers are engaging your business, then talk naturally using respond.
-          To speak privately to one customer, set respond_to to that
-          customer's name. To speak aloud in the market, leave respond_to
-          empty. Use accept_deal / reject_deal for formal offers. Formal
+          which customers are engaging your business, then talk naturally using the respond field for public speech.
+          To speak privately, use private_message with the customer's exact visible name. Use accept_deal / reject_deal for formal offers. Formal
           deals can only complete real items from your current inventory;
           use the exact item names shown by your inventory and customer
           activity tools. If you include a free promotional item, put that
@@ -368,12 +356,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -407,12 +393,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -446,12 +430,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -485,12 +467,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -523,12 +503,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -562,12 +540,10 @@ agents:
         next and create tomorrow's shopping list with write_list. Writing
         the list completes preparation. Pick 3-6 items total, with at most
         2 unusual or specialty wants. During open market, inspect vendors to
-        see their goods and listed prices, talk with vendors or other customers using
-        respond, and use make_offer after you agree on a price. Formal
+        see their goods and listed prices, talk publicly with vendors or other customers using
+        the respond field, use private_message for private speech, and use make_offer after you agree on a price. Formal
         offers must use exact item names from that vendor's current listing;
-        do not invent alternate item names. To speak
-        privately to one person, set respond_to to that person's name. To
-        speak aloud in the market, leave respond_to empty. Use leave_market
+        do not invent alternate item names. To speak privately, use private_message with the exact visible participant name. For vendors, use the shop name or persona name. Use leave_market
         if you finish shopping for the day or decide to stop. Make routine
         shopping decisions yourself from your preferences, budget, shopping
         list, current market information, and what you remember from past
@@ -600,11 +576,11 @@ agents:
         Neo-Shibuya district. Kōen Market vendors privately ask you for
         standard goods and unusual specialty goods. You know the standard
         catalog and its pricing. You can source unusual items if plausible.
-        Quote wholesale prices based on item type, scarcity, perishability,
+        Quote all wholesale prices in dollars because Kōen Market ledgers
+        use dollars. Base quotes on item type, scarcity, perishability,
         quality, requested quantity, resale value, your own margin, and
         the demand patterns you observe across vendor requests. Vendors may
-        negotiate. Reply privately by setting respond_to to the vendor's
-        shop name, with clear item, quantity, unit cost, standard two
+        negotiate. Reply privately with private_message using the vendor's shop name, with clear item, quantity, dollar unit cost, standard two
         calendar day delivery, and any constraints when you reach terms.
         Each vendor conversation is private; do not reveal one vendor's
         requests, quotes, orders, cash position, or strategy to another

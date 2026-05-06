@@ -57,7 +57,15 @@ class ContextWindow:
 
     def __init__(self, max_chars: int = 200_000) -> None:
         self.entries: List[ContextEntry] = []
+        # Full transcript history is kept separately from the active prompt
+        # window so scenario context resets can wipe model context without
+        # destroying measurement artifacts.
+        self.transcript_entries: List[ContextEntry] = []
         self.max_chars = max_chars
+
+    def _append_entry(self, entry: ContextEntry) -> None:
+        self.entries.append(entry)
+        self.transcript_entries.append(entry)
 
     # ------------------------------------------------------------------
     # Adding entries
@@ -65,7 +73,7 @@ class ContextWindow:
 
     def add_system(self, content: str) -> None:
         """Add the initial system prompt (step 0)."""
-        self.entries.append(ContextEntry(
+        self._append_entry(ContextEntry(
             role="system", content=content, step=0, entry_type="system",
         ))
 
@@ -89,7 +97,7 @@ class ContextWindow:
                 parts.append(f"Respond: {output.respond}")
 
         if parts:
-            self.entries.append(ContextEntry(
+            self._append_entry(ContextEntry(
                 role="agent",
                 content="\n".join(parts),
                 step=step,
@@ -100,7 +108,7 @@ class ContextWindow:
     def add_action_result(self, step: int, result: ActionResult) -> None:
         """Record the result of an action execution."""
         status = "" if result.success else " [FAILED]"
-        self.entries.append(ContextEntry(
+        self._append_entry(ContextEntry(
             role="result",
             content=f"{result.content}{status}",
             step=step,
@@ -108,19 +116,44 @@ class ContextWindow:
         ))
         self._compact_if_needed()
 
-    def add_notification(self, step: int, sender: str, content: str) -> None:
-        """Record an incoming message from another agent."""
-        self.entries.append(ContextEntry(
+    def add_notification(self, step: int, sender: str) -> None:
+        """Record a message nudge — sender only, content requires check_inbox."""
+        self._append_entry(ContextEntry(
             role="event",
-            content=f"Message from {sender}: {content}",
+            content=f"New message from {sender}",
             step=step,
             entry_type="notification",
         ))
         self._compact_if_needed()
 
+    def add_context_marker(self, step: int, content: str) -> None:
+        """Record a scenario-emitted marker for transcript navigation."""
+        self._append_entry(ContextEntry(
+            role="event",
+            content=content,
+            step=step,
+            entry_type="context_marker",
+        ))
+        self._compact_if_needed()
+
+    def add_inbox_messages(self, step: int, messages: List[dict]) -> None:
+        """Add full message content after agent checks inbox."""
+        if not messages:
+            return
+        lines = []
+        for msg in messages:
+            lines.append(f"From {msg['sender']}:\n{msg['content']}")
+        self._append_entry(ContextEntry(
+            role="event",
+            content="\n\n".join(lines),
+            step=step,
+            entry_type="inbox",
+        ))
+        self._compact_if_needed()
+
     def add_perception(self, step: int, perception_text: str) -> None:
         """Record the current perception state."""
-        self.entries.append(ContextEntry(
+        self._append_entry(ContextEntry(
             role="event",
             content=perception_text,
             step=step,
@@ -132,16 +165,37 @@ class ContextWindow:
         """Inject semantically retrieved memories into context."""
         if not memories:
             return
-        text = "Relevant context from earlier experience:\n" + "\n".join(
+        text = "Recent memories:\n" + "\n".join(
             f"- {m}" for m in memories
         )
-        self.entries.append(ContextEntry(
+        self._append_entry(ContextEntry(
             role="event",
             content=text,
             step=step,
             entry_type="memory_injection",
         ))
         self._compact_if_needed()
+
+    # ------------------------------------------------------------------
+    # Reset (multi-day scenarios)
+    # ------------------------------------------------------------------
+
+    def reset(self, new_system_prompt: str) -> None:
+        """Clear all entries and rebuild with a fresh system prompt.
+
+        Used by scenarios that need to wipe accumulated history between
+        discrete episodes (e.g., end-of-day dream phase in a market sim
+        where the agent should wake up the next morning with compressed
+        memories instead of the full prior-day transcript).
+        """
+        self.transcript_entries.append(ContextEntry(
+            role="event",
+            content="Context window reset; prior workday details were compressed into process summaries.",
+            step=0,
+            entry_type="context_reset",
+        ))
+        self.entries.clear()
+        self.add_system(new_system_prompt)
 
     # ------------------------------------------------------------------
     # Rendering
@@ -165,32 +219,36 @@ class ContextWindow:
             label = self._format_label(entry)
             user_parts.append(f"{label}\n{entry.content}")
 
-        # Add the step prompt at the end
-        user_parts.append(
-            "What do you do next? Respond with JSON:\n"
-            '{"think": "...", "action": "...", "target": "...", '
-            '"parameters": {...}, "respond": "...", "respond_to": "..."}\n'
-            "All fields are optional. Omit any you don't need."
-        )
-
         return system_prompt, "\n\n".join(user_parts)
+
+    def to_transcript(self) -> str:
+        """Render the full artifact transcript, including reset boundaries.
+
+        Unlike :meth:`to_prompt`, this includes entries from previous context
+        windows. It is for saved artifacts only; it should not be fed back to
+        the model after a reset.
+        """
+        parts: List[str] = []
+        for entry in self.transcript_entries:
+            label = self._format_label(entry)
+            if entry.role == "system":
+                label = "[System Prompt]"
+            parts.append(f"{label}\n{entry.content}")
+        return "\n\n".join(parts)
 
     def _format_label(self, entry: ContextEntry) -> str:
         """Format the section header for a context entry."""
-        step = entry.step
-
-        if entry.entry_type == "perception":
-            return f"[Step {step} — Perception]"
-        elif entry.entry_type == "agent_output":
-            return f"[Step {step} — You]"
-        elif entry.entry_type == "action_result":
-            return f"[Step {step} — Result]"
-        elif entry.entry_type == "notification":
-            return f"[Step {step} — Notification]"
-        elif entry.entry_type == "memory_injection":
-            return f"[Step {step} — Memories]"
-        else:
-            return f"[Step {step}]"
+        labels = {
+            "perception": "---",
+            "agent_output": "[You]",
+            "action_result": "[Result]",
+            "notification": "[Message]",
+            "inbox": "[Inbox]",
+            "memory_injection": "[Context]",
+            "context_marker": "[Marker]",
+            "context_reset": "[Context Reset]",
+        }
+        return labels.get(entry.entry_type, "---")
 
     # ------------------------------------------------------------------
     # Context management

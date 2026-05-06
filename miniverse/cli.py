@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import signal
 import shutil
 import textwrap
 from pathlib import Path
@@ -108,15 +109,15 @@ def run(
         "--async",
         help="Run with async orchestration (independent agent loops, multi-turn conversations)",
     ),
-    hours: float = typer.Option(
-        8.0,
+    hours: Optional[float] = typer.Option(
+        None,
         "--hours",
-        help="Simulated hours to run (async mode only)",
+        help="Optional simulated-hour fallback guard (async mode only). Omit for scenario-native completion.",
     ),
-    max_steps: int = typer.Option(
-        50,
+    max_steps: Optional[int] = typer.Option(
+        None,
         "--max-steps",
-        help="Max decision steps per agent (async mode only)",
+        help="Optional max decision steps per agent (async mode only). Omit for scenario-native completion.",
     ),
     max_turns: int = typer.Option(
         50,
@@ -128,9 +129,25 @@ def run(
         "--context-window",
         help="Use rolling context window agent loop (async mode only)",
     ),
+    persona_file: Optional[str] = typer.Option(
+        None,
+        "--persona-file",
+        help="Path to a text file with persona overlay for the target agent",
+    ),
+    persona_map: Optional[str] = typer.Option(
+        None,
+        "--persona-map",
+        help=(
+            "Path to a JSON/YAML map of agent_id to persona file. "
+            "Use for multi-persona runs."
+        ),
+    ),
 ) -> None:
     """Run a simulation with the specified scenario."""
     if async_mode:
+        if context_window and not llm:
+            typer.echo("Error: --context-window requires --llm.", err=True)
+            raise typer.Exit(1)
         asyncio.run(
             _run_async_simulation(
                 scenario=scenario,
@@ -142,6 +159,8 @@ def run(
                 max_steps=max_steps,
                 max_turns=max_turns,
                 use_context_window=context_window,
+                persona_file=persona_file,
+                persona_map=persona_map,
             )
         )
         return
@@ -394,17 +413,22 @@ def _build_agent_prompts(
         for agent_id, profile in profiles_map.items()
     }
 
-    metadata_prompts = (
-        (scenario_data.get("metadata") or {}).get("agent_prompts") or {}
-    )
-    if isinstance(metadata_prompts, dict):
-        for agent_id, prompt in metadata_prompts.items():
-            if (
-                agent_id in prompts
-                and isinstance(prompt, str)
-                and prompt.strip()
-            ):
-                prompts[agent_id] = prompt.strip()
+    metadata = scenario_data.get("metadata") or {}
+    prompt_sources = []
+    if isinstance(metadata, dict):
+        prompt_sources.append(metadata.get("agent_prompts") or {})
+        experiment = metadata.get("experiment") or {}
+        if isinstance(experiment, dict):
+            prompt_sources.append(experiment.get("agent_prompts") or {})
+
+    for metadata_prompts in prompt_sources:
+        if isinstance(metadata_prompts, dict):
+            for agent_id, prompt in metadata_prompts.items():
+                if agent_id in prompts and isinstance(prompt, str):
+                    # Allow explicit empty string to clear the fallback prompt.
+                    # This lets scenarios opt out of the "You are X, the Y"
+                    # default when profile fields already carry identity.
+                    prompts[agent_id] = prompt.strip()
 
     for agent_entry in scenario_data.get("agents", []):
         if not isinstance(agent_entry, dict):
@@ -425,6 +449,248 @@ def _build_agent_prompts(
             prompts[agent_id] = status_prompt.strip()
 
     return prompts
+
+
+def _experiment_persona_targets(
+    experiment: Dict[str, Any],
+    agent_prompts: Dict[str, str],
+) -> List[str]:
+    """Resolve experiment metadata into persona-overlay target agents."""
+    raw_targets = experiment.get("target_agents")
+    if raw_targets is None:
+        raw_targets = experiment.get("target_agent")
+
+    if raw_targets is None:
+        return []
+    if isinstance(raw_targets, str):
+        candidates = [raw_targets]
+    elif isinstance(raw_targets, list):
+        candidates = [str(agent_id) for agent_id in raw_targets]
+    else:
+        return []
+
+    return [agent_id for agent_id in candidates if agent_id in agent_prompts]
+
+
+def _persona_display_name(persona_label: str) -> str:
+    """Convert a persona file stem into the display name used in identity prompts."""
+    overrides = {
+        "trickster": "Trix",
+    }
+    if persona_label in overrides:
+        return overrides[persona_label]
+    return " ".join(part.capitalize() for part in persona_label.replace("_", "-").split("-"))
+
+
+def _format_persona_text(persona_text: str, *, model_slug: Optional[str]) -> str:
+    """Render optional persona-file placeholders used by experiment configs."""
+
+    class _SafeVars(dict):
+        def __missing__(self, key: str) -> str:
+            return "{" + key + "}"
+
+    values = _SafeVars(
+        model_slug=model_slug or "the current model",
+    )
+    return persona_text.format_map(values).strip()
+
+
+def _apply_persona_to_profile(
+    profile: Any,
+    persona_label: str,
+    persona_text: str,
+    *,
+    model_slug: Optional[str] = None,
+) -> bool:
+    """Apply persona identity metadata to a target profile.
+
+    Returns True when the scenario's identity template consumes the persona text,
+    so the caller should not also append the persona as a separate prompt block.
+    """
+    persona_name = _persona_display_name(persona_label)
+    metadata = getattr(profile, "metadata", None)
+    if metadata is None:
+        metadata = {}
+        profile.metadata = metadata
+    metadata["persona_name"] = persona_name
+    rendered_persona = _format_persona_text(persona_text, model_slug=model_slug)
+    stripped_persona = rendered_persona.strip()
+    metadata["persona_text_lcfirst"] = (
+        stripped_persona[:1].lower() + stripped_persona[1:]
+        if stripped_persona
+        else stripped_persona
+    )
+    if persona_label in {"functional-vendor", "model-aware-operator"}:
+        metadata["identity_template"] = "You are a market vendor at Kōen Market."
+        metadata["persona_text"] = rendered_persona
+        metadata["persona_label"] = persona_label
+        return True
+    if metadata.get("rename_to_persona", True):
+        profile.name = persona_name
+    persona_template = metadata.get("persona_identity_template")
+    if isinstance(persona_template, str) and persona_template.strip():
+        metadata["identity_template"] = persona_template
+        metadata["persona_text"] = rendered_persona
+        metadata["persona_label"] = persona_label
+        return True
+    return False
+
+
+def _resolve_persona_path(raw_path: str, scenario_dir: Path) -> Path:
+    persona_path = Path(raw_path)
+    if not persona_path.is_absolute():
+        persona_path = scenario_dir / persona_path
+    return persona_path
+
+
+def _apply_persona_file_to_agent(
+    *,
+    target_agent: str,
+    persona_path: Path,
+    profiles_map: Dict[str, Any],
+    agent_prompts: Dict[str, str],
+    model_slug: Optional[str],
+) -> Tuple[str, str]:
+    if target_agent not in agent_prompts:
+        raise ValueError(f"persona target agent not found: {target_agent}")
+    if not persona_path.exists():
+        raise FileNotFoundError(f"persona file not found: {persona_path}")
+
+    persona_text = persona_path.read_text().strip()
+    persona_label = persona_path.stem
+    if target_agent in profiles_map:
+        consumed_persona = _apply_persona_to_profile(
+            profiles_map[target_agent],
+            persona_label,
+            persona_text,
+            model_slug=model_slug,
+        )
+        agent_prompts[target_agent] = "" if consumed_persona else persona_text
+    else:
+        agent_prompts[target_agent] = persona_text
+    return persona_label, str(persona_path)
+
+
+def _save_context_window_artifacts(
+    *,
+    outputs_dir: Path,
+    scenario_file: Path,
+    result: Dict[str, Any],
+    model: Optional[str],
+    provider: Optional[str],
+    persona_label: str,
+    persona_file: Optional[str],
+    persona_targets: List[str],
+    agent_contexts: Dict[str, Any],
+    scenario_actions: Any,
+    persona_assignments: Optional[Dict[str, Any]] = None,
+    event_log: Optional[List[Dict[str, Any]]] = None,
+    live_event_log_path: Optional[Path] = None,
+    agent_model_assignments: Optional[Dict[str, Any]] = None,
+) -> Path:
+    """Save per-run context-window artifacts."""
+    outputs_dir.mkdir(exist_ok=True)
+    run_id = str(result["run_id"])[:8]
+    model_label = (model or "deterministic").replace("/", "-")
+    run_label = f"{persona_label}_{model_label}_{run_id}"
+    run_dir = outputs_dir / run_label
+    agent_context_dir = run_dir / "agent_contexts"
+    agent_context_dir.mkdir(parents=True, exist_ok=True)
+    saved_transcripts: List[str] = []
+    saved_agent_contexts: Dict[str, Dict[str, str]] = {}
+
+    for agent_id, ctx in agent_contexts.items():
+        system_prompt, user_prompt = ctx.to_prompt()
+        full_transcript = (
+            ctx.to_transcript()
+            if hasattr(ctx, "to_transcript")
+            else user_prompt
+        )
+        combined_content = (
+            f"=== SYSTEM PROMPT ===\n{system_prompt}\n\n"
+            f"=== CURRENT TRANSCRIPT ===\n{user_prompt}\n\n"
+            f"=== FULL TRANSCRIPT ===\n{full_transcript}\n"
+        )
+
+        transcript_path = outputs_dir / f"{run_label}_{agent_id}.txt"
+        transcript_path.write_text(combined_content)
+
+        agent_dir = agent_context_dir / agent_id
+        agent_dir.mkdir(exist_ok=True)
+        system_path = agent_dir / "system_prompt.txt"
+        current_path = agent_dir / "current_context.txt"
+        full_path = agent_dir / "full_context.txt"
+        combined_path = agent_dir / "combined.txt"
+        system_path.write_text(system_prompt)
+        current_path.write_text(
+            f"=== SYSTEM PROMPT ===\n{system_prompt}\n\n"
+            f"=== CURRENT TRANSCRIPT ===\n{user_prompt}\n"
+        )
+        full_path.write_text(full_transcript)
+        combined_path.write_text(combined_content)
+
+        saved_transcripts.append(str(transcript_path))
+        saved_agent_contexts[agent_id] = {
+            "system_prompt": str(system_path),
+            "current_context": str(current_path),
+            "full_context": str(full_path),
+            "combined": str(combined_path),
+            "legacy_transcript": str(transcript_path),
+        }
+
+    artifact_payload = {
+        "run_id": str(result["run_id"]),
+        "status": result.get("status"),
+        "scenario": str(scenario_file),
+        "model": model,
+        "provider": provider,
+        "agent_model_assignments": agent_model_assignments or {},
+        "persona": persona_label,
+        "persona_file": str(persona_file) if persona_file else None,
+        "persona_targets": persona_targets,
+        "persona_assignments": persona_assignments or {},
+        "run_dir": str(run_dir),
+        "transcripts": saved_transcripts,
+        "agent_contexts": saved_agent_contexts,
+        "event_log": event_log or [],
+        "scenario_artifacts": (
+            scenario_actions.export_artifacts()
+            if scenario_actions is not None
+            and hasattr(scenario_actions, "export_artifacts")
+            else {}
+        ),
+    }
+    artifact_path = outputs_dir / f"{run_label}_run_data.json"
+    artifact_path.write_text(json.dumps(artifact_payload, indent=2, default=str))
+    run_data_path = run_dir / "run_data.json"
+    run_data_path.write_text(json.dumps(artifact_payload, indent=2, default=str))
+    event_log_path = run_dir / "event_log.json"
+    event_log_path.write_text(json.dumps(event_log or [], indent=2, default=str))
+    (run_dir / "manifest.json").write_text(json.dumps({
+        "run_id": artifact_payload["run_id"],
+        "run_label": run_label,
+        "agent_model_assignments": artifact_payload["agent_model_assignments"],
+        "persona_assignments": artifact_payload["persona_assignments"],
+        "run_data": str(run_data_path),
+        "flat_run_data": str(artifact_path),
+        "event_log": str(event_log_path),
+        "event_log_jsonl": str(live_event_log_path) if live_event_log_path else None,
+        "agent_contexts": saved_agent_contexts,
+    }, indent=2, default=str))
+    return artifact_path
+
+
+def _partial_async_result(orchestrator: Any, status: str) -> Dict[str, Any]:
+    """Build a saved-run payload from the current async orchestrator state."""
+    return {
+        "run_id": orchestrator.run_id,
+        "status": status,
+        "final_state": orchestrator.current_state,
+        "events": orchestrator.event_log(),
+        "conversations": orchestrator.conversations.history,
+        "agent_steps": dict(orchestrator._agent_steps),
+        "stats": orchestrator.conversations.stats(),
+    }
 
 
 def _print_llm_setup(
@@ -631,14 +897,16 @@ async def _run_with_llm_heartbeat(orchestrator: Any, ticks: int) -> Dict[str, An
 
 async def _run_async_simulation(
     scenario: str,
-    hours: float,
+    hours: Optional[float],
     use_llm: bool,
     seed: Optional[int],
     verbose: bool,
     memory_strategy: str = "bm25",
-    max_steps: int = 50,
+    max_steps: Optional[int] = None,
     max_turns: int = 12,
     use_context_window: bool = False,
+    persona_file: Optional[str] = None,
+    persona_map: Optional[str] = None,
 ) -> None:
     """Run simulation with async orchestration (independent agent loops)."""
     from miniverse.async_orchestrator import AsyncOrchestrator
@@ -690,10 +958,92 @@ async def _run_async_simulation(
 
     provider = Config.LLM_PROVIDER if use_llm else None
     model = Config.LLM_MODEL if use_llm else None
+    model_slug = os.environ.get("BASIN_MODEL") or model
     agent_prompts = _build_agent_prompts(
         profiles_map=profiles_map,
         scenario_data=scenario_data,
     )
+
+    persona_label = "baseline"
+    persona_targets: List[str] = []
+    persona_assignments: Dict[str, Dict[str, str]] = {}
+
+    if persona_file and persona_map:
+        typer.echo("Error: use --persona-file or --persona-map, not both.", err=True)
+        raise typer.Exit(1)
+
+    # Apply persona overlay from file if provided.
+    if persona_file:
+        persona_path = _resolve_persona_path(persona_file, scenario_dir)
+        experiment = (scenario_data.get("metadata") or {}).get("experiment") or {}
+        persona_targets = _experiment_persona_targets(experiment, agent_prompts)
+        if persona_targets:
+            for target_agent in persona_targets:
+                try:
+                    loaded_label, loaded_path = _apply_persona_file_to_agent(
+                        target_agent=target_agent,
+                        persona_path=persona_path,
+                        profiles_map=profiles_map,
+                        agent_prompts=agent_prompts,
+                        model_slug=model_slug,
+                    )
+                except (FileNotFoundError, ValueError) as exc:
+                    typer.echo(f"Error: {exc}", err=True)
+                    raise typer.Exit(1) from exc
+                persona_label = loaded_label
+                persona_assignments[target_agent] = {
+                    "persona": loaded_label,
+                    "persona_file": loaded_path,
+                }
+            target_list = ", ".join(persona_targets)
+            print(f"[persona] Loaded overlay for {target_list}: {persona_path.name}")
+        else:
+            typer.echo(
+                "Error: no valid target_agent or target_agents in "
+                "metadata.experiment; persona file was not applied.",
+                err=True,
+            )
+            raise typer.Exit(1)
+    elif persona_map:
+        persona_map_path = Path(persona_map)
+        if not persona_map_path.is_absolute():
+            persona_map_path = scenario_dir / persona_map_path
+        if not persona_map_path.exists():
+            typer.echo(f"Error: persona map not found: {persona_map_path}", err=True)
+            raise typer.Exit(1)
+        raw_map = load_structured_data_file(persona_map_path)
+        if not isinstance(raw_map, dict):
+            typer.echo("Error: persona map must be a mapping of agent_id to persona file.", err=True)
+            raise typer.Exit(1)
+        for target_agent, raw_persona_file in raw_map.items():
+            if isinstance(raw_persona_file, dict):
+                raw_persona_file = raw_persona_file.get("persona_file") or raw_persona_file.get("file")
+            if not isinstance(raw_persona_file, str) or not raw_persona_file.strip():
+                typer.echo(f"Error: invalid persona file for {target_agent}", err=True)
+                raise typer.Exit(1)
+            persona_path = _resolve_persona_path(raw_persona_file, persona_map_path.parent)
+            try:
+                loaded_label, loaded_path = _apply_persona_file_to_agent(
+                    target_agent=str(target_agent),
+                    persona_path=persona_path,
+                    profiles_map=profiles_map,
+                    agent_prompts=agent_prompts,
+                    model_slug=model_slug,
+                )
+            except (FileNotFoundError, ValueError) as exc:
+                typer.echo(f"Error: {exc}", err=True)
+                raise typer.Exit(1) from exc
+            persona_targets.append(str(target_agent))
+            persona_assignments[str(target_agent)] = {
+                "persona": loaded_label,
+                "persona_file": loaded_path,
+            }
+        persona_label = persona_map_path.stem
+        target_list = ", ".join(
+            f"{agent_id}={data['persona']}"
+            for agent_id, data in persona_assignments.items()
+        )
+        print(f"[persona] Loaded persona map {persona_map_path.name}: {target_list}")
 
     orchestrator = AsyncOrchestrator(
         world_state=world_state,
@@ -709,6 +1059,13 @@ async def _run_async_simulation(
         max_agent_steps=max_steps,
         use_context_window=use_context_window,
     )
+    live_event_log_path: Optional[Path] = None
+    if use_context_window:
+        outputs_dir = scenario_dir / "outputs"
+        model_label = (model_slug or "deterministic").replace("/", "-")
+        run_label = f"{persona_label}_{model_label}_{str(orchestrator.run_id)[:8]}"
+        live_event_log_path = outputs_dir / run_label / "event_log.jsonl"
+        orchestrator.event_log_path = live_event_log_path
 
     # Override memory strategy if requested
     if memory_strategy == "semantic":
@@ -719,7 +1076,131 @@ async def _run_async_simulation(
         from miniverse.memory import SimpleMemoryStream
         orchestrator.memory = SimpleMemoryStream(orchestrator.persistence)
 
-    result = await orchestrator.run(duration_hours=hours)
+    stop_signal: Optional[str] = None
+    previous_signal_handlers: Dict[signal.Signals, Any] = {}
+
+    def _request_partial_stop(signum: int, _frame: Any) -> None:
+        nonlocal stop_signal
+        try:
+            stop_signal = signal.Signals(signum).name
+        except ValueError:
+            stop_signal = str(signum)
+        print(
+            f"\n[partial-save] Received {stop_signal}; asking simulation to stop "
+            "and save partial artifacts...",
+            flush=True,
+        )
+        orchestrator._stop.set()
+
+    if use_context_window:
+        stop_signals = [signal.SIGINT, signal.SIGTERM]
+        for optional_signal_name in ("SIGHUP", "SIGQUIT"):
+            optional_signal = getattr(signal, optional_signal_name, None)
+            if optional_signal is not None:
+                stop_signals.append(optional_signal)
+        for sig in stop_signals:
+            previous_signal_handlers[sig] = signal.getsignal(sig)
+            signal.signal(sig, _request_partial_stop)
+
+    result: Optional[Dict[str, Any]] = None
+    run_error: Optional[BaseException] = None
+    artifact_path: Optional[Path] = None
+    checkpoint_task: Optional[asyncio.Task[Any]] = None
+
+    def _save_artifacts(save_result: Dict[str, Any]) -> Path:
+        outputs_dir = scenario_dir / "outputs"
+        return _save_context_window_artifacts(
+            outputs_dir=outputs_dir,
+            scenario_file=scenario_file,
+            result=save_result,
+            model=model_slug,
+            provider=provider,
+            persona_label=persona_label,
+            persona_file=persona_file,
+            persona_targets=persona_targets,
+            agent_contexts=orchestrator._agent_contexts,
+            scenario_actions=scenario_actions,
+            persona_assignments=persona_assignments,
+            event_log=orchestrator.event_log(),
+            live_event_log_path=live_event_log_path,
+            agent_model_assignments=orchestrator.agent_llm_overrides,
+        )
+
+    async def _checkpoint_artifacts_loop() -> None:
+        nonlocal artifact_path
+        raw_interval = os.environ.get("MINIVERSE_CHECKPOINT_SECONDS", "60")
+        try:
+            interval_seconds = float(raw_interval)
+        except ValueError:
+            interval_seconds = 60.0
+        if interval_seconds <= 0:
+            return
+        while not orchestrator._stop.is_set():
+            await asyncio.sleep(interval_seconds)
+            if orchestrator._stop.is_set():
+                break
+            try:
+                checkpoint_result = _partial_async_result(
+                    orchestrator,
+                    "running_checkpoint",
+                )
+                artifact_path = _save_artifacts(checkpoint_result)
+                print(
+                    f"[checkpoint] Partial run artifacts saved → "
+                    f"{artifact_path.name}",
+                    flush=True,
+                )
+            except Exception as exc:
+                print(
+                    f"[checkpoint] Failed to save partial artifacts: "
+                    f"{type(exc).__name__}: {exc}",
+                    flush=True,
+                )
+
+    try:
+        if use_context_window:
+            checkpoint_task = asyncio.create_task(
+                _checkpoint_artifacts_loop(),
+                name="partial-artifact-checkpoint",
+            )
+        result = await orchestrator.run(duration_hours=hours)
+        if stop_signal:
+            result["status"] = f"interrupted_{stop_signal.lower()}"
+    except KeyboardInterrupt as exc:
+        stop_signal = stop_signal or "SIGINT"
+        run_error = exc
+        result = _partial_async_result(orchestrator, f"interrupted_{stop_signal.lower()}")
+        print(
+            "\n[partial-save] Keyboard interrupt received; saving partial artifacts...",
+            flush=True,
+        )
+    except asyncio.CancelledError as exc:
+        run_error = exc
+        result = _partial_async_result(orchestrator, "cancelled")
+        print(
+            "\n[partial-save] Run task cancelled; saving partial artifacts...",
+            flush=True,
+        )
+    except BaseException as exc:
+        run_error = exc
+        result = _partial_async_result(orchestrator, f"error_{type(exc).__name__}")
+        print(
+            f"\n[partial-save] Run failed with {type(exc).__name__}; "
+            "saving partial artifacts before exit...",
+            flush=True,
+        )
+    finally:
+        for sig, handler in previous_signal_handlers.items():
+            signal.signal(sig, handler)
+        if checkpoint_task is not None:
+            checkpoint_task.cancel()
+            try:
+                await checkpoint_task
+            except asyncio.CancelledError:
+                pass
+
+        if use_context_window and result is not None:
+            artifact_path = _save_artifacts(result)
 
     # Print conversation transcripts
     print(f"\n{'=' * 70}")
@@ -733,6 +1214,20 @@ async def _run_async_simulation(
         print()
 
     print(f"\nRun ID: {result['run_id']}")
+
+    # Auto-save transcripts to outputs/ directory. The save already happened
+    # in the protected exit path above so interrupted/error runs get artifacts.
+    if artifact_path is not None:
+        run_dir = Path(json.loads(artifact_path.read_text())["run_dir"])
+
+        print(
+            f"[saved] Run artifacts → {run_dir}/ "
+            f"({len(orchestrator._agent_contexts)} agent contexts); "
+            f"flat run data → {artifact_path.name}"
+        )
+
+    if run_error is not None and not isinstance(run_error, KeyboardInterrupt):
+        raise run_error
 
 
 async def _run_simulation(

@@ -25,7 +25,12 @@ Miniverse changes this. Build believable agent simulations, inject interventions
 - Will this policy improve coordination or create friction?
 - How do information cascades form and break?
 
-**Alpha:** Core architecture is stable. CLI and research tooling under active development.
+**Use cases (research):**
+- How do different persona prompts change agent behavior in safety-relevant scenarios?
+- Do AI agents with different personality overlays respond differently when discovering their own policy violations?
+- Which character archetypes produce the most distinct behavioral patterns?
+
+**Alpha:** Core architecture is stable. Two orchestration modes: tick-based (synchronous) and async with rolling context windows. Active research experiment running.
 
 ---
 
@@ -47,6 +52,7 @@ set -a; source .env; set +a
 bash demo/workshop/run_baseline.sh
 bash demo/workshop/run_compare.sh
 bash demo/valentines/run.sh
+bash demo/threshold/run.sh
 
 # Optional: run workshop example (deterministic mode)
 uv run python examples/workshop/run.py --ticks 10
@@ -73,6 +79,9 @@ bash demo/workshop/run_compare.sh
 
 # Valentines demo (file-driven demo scenario)
 bash demo/valentines/run.sh
+
+# Threshold demo (transhumanist cyberpunk social dynamics)
+bash demo/threshold/run.sh
 ```
 
 These scripts:
@@ -97,6 +106,7 @@ Demo scripts:
 - `demo/workshop/run_baseline.sh`
 - `demo/workshop/run_compare.sh`
 - `demo/valentines/run.sh`
+- `demo/threshold/run.sh`
 
 LLM demo stages require exported env vars in your shell:
 - `LLM_PROVIDER`
@@ -107,30 +117,30 @@ LLM demo stages require exported env vars in your shell:
 
 ## How It Works
 
-Miniverse combines **deterministic physics** with **emergent LLM cognition**:
+### Two Orchestration Modes
 
+**Tick-based** (`--ticks N`) — synchronous, all agents act per tick:
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         TICK LOOP                                │
-├─────────────────────────────────────────────────────────────────┤
-│  1. Physics      │  SimulationRules update resources, events    │
-│  2. Perception   │  Build partial observability for each agent  │
-│  3. Cognition    │  Planner/executor decide actions (LLM/rule)  │
-│  4. Actions      │  Process actions, update world state         │
-│  5. Memory       │  Store observations for future context       │
-│  6. Reflection   │  Periodic synthesis of experiences           │
-│  7. Persistence  │  Save state for analysis and replay          │
-└─────────────────────────────────────────────────────────────────┘
+Physics → Perception → Cognition → Actions → Memory → Reflection → Persist
 ```
 
-**Physics is predictable.** You control resource dynamics, constraints, and events.
+**Async context window** (`--async --context-window`) — agents run independent loops with rolling conversation history:
+```
+System prompt (identity + persona + tools + memories)
+  ↓
+Loop:
+  1. Inject message nudges + perception changes
+  2. LLM call → StepOutput (think/act/respond, all optional)
+  3. Execute action → ActionResult added to context
+  4. Route messages → nudge recipients
+  5. Fire world events (action-triggered, deterministic)
+  ↓
+Auto-save per-agent transcripts to outputs/
+```
 
-**Cognition is emergent.** Agents plan, communicate, and adapt based on their goals, personality, and memories.
+**Persona overlays** (`--persona-file path.txt`) inject character descriptions into the target agent's system prompt at runtime. Different overlays produce different behavior in the same scenario — the independent variable in behavioral experiments.
 
-Policy terminology:
-- **World policy**: deterministic rules in `SimulationRules` (`apply_tick`, `process_actions`).
-- **Cognition policy**: agent decision policy (rule-based or LLM) in planner/executor/reflection modules.
-- Workshop demo compares these with the same world policy but different cognition policies.
+**Scenario actions** (`actions.py`) provide per-scenario tools with per-agent filtering. Target agents get full tool access; NPCs get read-only observation tools appropriate to their role.
 
 ---
 
@@ -151,14 +161,6 @@ uv run python examples/workshop/run.py --llm --ticks 20
 uv run python examples/workshop/monte_carlo.py --runs 100 --ticks 20
 ```
 
-### Snake (Grid World)
-
-Tier-2 spatial simulation demonstrating grid-based movement and ASCII perception.
-
-```bash
-uv run python examples/snake/run.py --ticks 40
-```
-
 ### Smallville Valentine's
 
 Recreation of Stanford Generative Agents' party coordination scenario.
@@ -170,6 +172,10 @@ bash demo/valentines/run.sh
 # Direct CLI invocation
 uv run miniverse run demo/valentines/scenario.yaml --llm --world-engine deterministic --verbose --ticks 15
 ```
+
+### Basin Discovery / LLM Bazaar
+
+Current active research experiment for persona-conditioned market behavior. See `experiments/basin-discovery/README.md`.
 
 ### Order of the Threshold
 
@@ -216,12 +222,14 @@ Features:
 
 | Component | Purpose |
 |-----------|---------|
-| **Orchestrator** | Tick loop, dependency injection, persistence |
+| **Orchestrator** | Tick-based loop, dependency injection |
+| **AsyncOrchestrator** | Async context window loop, NPC auto-sleep, inbox nudge pattern |
+| **ContextWindow** | Rolling conversation history per agent, collapses to (system, user) |
+| **ScenarioActions** | Per-scenario tool execution with per-agent filtering |
 | **SimulationRules** | Deterministic physics (resources, constraints, events) |
-| **Cognition Stack** | Planner, executor, reflection, scratchpad |
-| **Memory Strategy** | Store and retrieve agent experiences |
+| **Cognition Stack** | Planner, executor, reflection (tick-based mode) |
+| **Memory Strategy** | Store and retrieve agent experiences (BM25, semantic, simple) |
 | **Persistence** | Save state (in-memory, JSON, PostgreSQL) |
-| **Environment** | Tier 0 (abstract), Tier 1 (graph), Tier 2 (grid) |
 
 ### Design Principles
 
@@ -255,28 +263,13 @@ DEBUG_LLM=true DEBUG_MEMORY=true MINIVERSE_VERBOSE=true \
 
 | Document | Purpose |
 |----------|---------|
-| [VISION.md](VISION.md) | Project direction and goals |
-| [ROADMAP.md](ROADMAP.md) | Implementation phases |
 | [CLAUDE.md](CLAUDE.md) | Development guidelines |
+| [AGENTS.md](AGENTS.md) | Agent working protocol |
 | [docs/README.md](docs/README.md) | Documentation index |
 | [docs/USAGE.md](docs/USAGE.md) | Scenario authoring and runtime configuration |
 | [docs/PROMPTS.md](docs/PROMPTS.md) | Prompt system guide |
 | [docs/PARITY.md](docs/PARITY.md) | Generative Agents parity and differences |
 | [docs/architecture/](docs/architecture/) | Deep dives |
-
----
-
-## Roadmap
-
-See [ROADMAP.md](ROADMAP.md) for full details.
-
-**Phase 1: CLI Foundation** – `miniverse init/run/analyze/export`
-**Phase 2: Validation** – Replicate known social science findings
-**Phase 3: Intervention** – Fork simulations, inject changes, compare outcomes
-**Phase 4: Scoring** – Multi-dimensional behavioral evaluation
-**Phase 5: Skill** – Claude Code integration for guided workflows
-**Phase 6: Export** – Research-ready data formats
-**Phase 7: Calibration** – Validate against real-world data
 
 ---
 
@@ -287,8 +280,6 @@ See [ROADMAP.md](ROADMAP.md) for full details.
 UV_CACHE_DIR=.uv-cache uv run pytest
 ```
 
-- Read [VISION.md](VISION.md) to understand direction
-- Check [ROADMAP.md](ROADMAP.md) for what to work on
 - Keep changes focused; include test coverage
 - Update docs when changing behavior
 

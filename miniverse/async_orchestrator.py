@@ -19,9 +19,12 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
+import time
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from uuid import UUID, uuid4
 
@@ -52,6 +55,36 @@ def _env_enabled(name: str) -> bool:
     return os.getenv(name, "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _load_agent_llm_overrides() -> Dict[str, Dict[str, str]]:
+    raw = os.getenv("BASIN_AGENT_MODELS") or os.getenv("MINIVERSE_AGENT_MODELS")
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid BASIN_AGENT_MODELS JSON: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("BASIN_AGENT_MODELS must be a JSON object keyed by agent id")
+
+    overrides: Dict[str, Dict[str, str]] = {}
+    for agent_id, config in payload.items():
+        if isinstance(config, str):
+            overrides[str(agent_id)] = {"model": config}
+            continue
+        if not isinstance(config, dict):
+            raise ValueError(f"BASIN_AGENT_MODELS[{agent_id!r}] must be a string or object")
+        entry: Dict[str, str] = {}
+        provider = config.get("provider")
+        model = config.get("model")
+        if provider is not None:
+            entry["provider"] = str(provider)
+        if model is not None:
+            entry["model"] = str(model)
+        if entry:
+            overrides[str(agent_id)] = entry
+    return overrides
+
+
 class AsyncOrchestrator:
     """Orchestrator with independent agent loops and multi-turn conversations.
 
@@ -76,7 +109,7 @@ class AsyncOrchestrator:
         world_prompt: str = "",
         verbose: bool = True,
         max_conversation_turns: int = 50,
-        max_agent_steps: int = 50,
+        max_agent_steps: Optional[int] = None,
         use_context_window: bool = False,
     ) -> None:
         self.current_state = world_state
@@ -84,6 +117,7 @@ class AsyncOrchestrator:
         self.agent_prompts = agent_prompts
         self.llm_provider = llm_provider
         self.llm_model = llm_model
+        self.agent_llm_overrides = _load_agent_llm_overrides()
         self.simulation_rules = simulation_rules
         self.world_prompt = world_prompt
         self.verbose = verbose
@@ -91,6 +125,22 @@ class AsyncOrchestrator:
         self.max_agent_steps = max_agent_steps
         self.use_context_window = use_context_window
         self.scenario_actions = scenario_actions
+
+        # Give scenario actions read access to profiles and persona overlays.
+        # Used by scenarios that need to rebuild system prompts (e.g. for
+        # context resets at episode boundaries).
+        if self.scenario_actions is not None and hasattr(
+            self.scenario_actions, "bind_orchestrator_context"
+        ):
+            self.scenario_actions.bind_orchestrator_context(agents, agent_prompts)
+        if self.scenario_actions is not None and hasattr(
+            self.scenario_actions, "bind_llm_config"
+        ):
+            self.scenario_actions.bind_llm_config(
+                llm_provider,
+                llm_model,
+                self.agent_llm_overrides,
+            )
 
         self.persistence = persistence or InMemoryPersistence()
         self.memory = memory or BM25MemoryStrategy(self.persistence)
@@ -116,18 +166,148 @@ class AsyncOrchestrator:
         self._agent_steps: Dict[str, int] = {}
         # Per-agent rate limit hit counter (for exponential backoff)
         self._agent_rate_limit_hits: Dict[str, int] = {}
+        # Global provider backoff. When one agent is rate-limited, all agent
+        # loops pause and scenarios can freeze wall-clock-based timers.
+        self._rate_limit_pause_lock = asyncio.Lock()
+        self._simulation_pause_until: float = 0.0
         # Lock for world state mutations
         self._state_lock = asyncio.Lock()
         # Global stop signal
         self._stop = asyncio.Event()
         # Per-agent context windows (used when use_context_window=True)
         self._agent_contexts: Dict[str, ContextWindow] = {}
-        # Per-agent pending notifications queue
+        if self.scenario_actions is not None and hasattr(
+            self.scenario_actions, "bind_agent_context_windows"
+        ):
+            self.scenario_actions.bind_agent_context_windows(self._agent_contexts)
+        # Per-agent notification nudge queue (sender names only, drained each step)
         self._agent_notifications: Dict[str, List[Dict[str, str]]] = {}
+        # Per-agent inbox (full message content, drained on check_inbox)
+        self._agent_inbox: Dict[str, List[Dict[str, str]]] = {}
+        # Per-agent scenario context events. Scenario markers are not inbox
+        # messages, but they still need to wake sleeping agents that received
+        # new world context.
+        self._agent_context_events: set[str] = set()
+        self._end_time: Optional[datetime] = None
+        self._time_limit_logged = False
+        self._scenario_complete_logged = False
+        self._max_steps_exhausted = False
+        self.event_log_path: Optional[Path] = None
+
+    def _llm_config_for_agent(self, agent_id: str) -> tuple[Optional[str], Optional[str]]:
+        override = self.agent_llm_overrides.get(agent_id, {})
+        return (
+            override.get("provider", self.llm_provider),
+            override.get("model", self.llm_model),
+        )
 
     def _log(self, msg: str) -> None:
         if self.verbose:
             print(msg)
+
+    def _rate_limit_max_hits(self) -> int:
+        raw = os.getenv("MINIVERSE_RATE_LIMIT_MAX_HITS", "").strip()
+        if not raw:
+            return 12
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            return 12
+
+    async def _wait_if_simulation_paused(self) -> None:
+        """Block agent loops during a global provider backoff pause."""
+        while not self._stop.is_set():
+            remaining = self._simulation_pause_until - time.monotonic()
+            if remaining <= 0:
+                return
+            await asyncio.sleep(min(remaining, 1.0))
+
+    async def _pause_for_rate_limit(self, seconds: float) -> None:
+        """Pause all agent loops and freeze scenario wall-clock timers."""
+        if seconds <= 0:
+            return
+        async with self._rate_limit_pause_lock:
+            now = time.monotonic()
+            self._simulation_pause_until = max(self._simulation_pause_until, now + seconds)
+            if self.scenario_actions is not None and hasattr(
+                self.scenario_actions, "pause_simulation_time"
+            ):
+                self.scenario_actions.pause_simulation_time(seconds)  # type: ignore[attr-defined]
+            await asyncio.sleep(seconds)
+
+    def _time_limit_reached(self) -> bool:
+        """Return True and signal stop once the simulated run window has elapsed."""
+        if self.clock is None or self._end_time is None:
+            return False
+        if self.clock.now < self._end_time:
+            return False
+        if not self._time_limit_logged:
+            self._log(colored(
+                f"  [world] Reached simulated time limit: {self.clock.time_str()}",
+                Color.YELLOW,
+            ))
+            self._time_limit_logged = True
+        self._stop.set()
+        return True
+
+    def _real_time_timeout_seconds(self, duration_hours: Optional[float]) -> Optional[float]:
+        """Return the wall-clock safety timeout for async runs.
+
+        Scenario-native runs with an explicit scenario completion predicate should
+        be allowed to stop on their own configured endpoint. Set
+        MINIVERSE_ASYNC_TIMEOUT_SECONDS to override; use 0 to disable.
+        """
+        raw = os.getenv("MINIVERSE_ASYNC_TIMEOUT_SECONDS")
+        if raw is not None:
+            try:
+                timeout = float(raw)
+            except ValueError:
+                timeout = 600.0
+            return timeout if timeout > 0 else None
+
+        has_native_completion = (
+            self.scenario_actions is not None
+            and hasattr(self.scenario_actions, "is_complete")
+        )
+        if duration_hours is None and has_native_completion:
+            return None
+        return 600.0
+
+    def _completion_status(self, pending_count: int) -> str:
+        if self._scenario_complete_logged:
+            return "scenario_complete"
+        if self._time_limit_logged:
+            return "sim_time_limit"
+        if pending_count:
+            return "wall_time_timeout"
+        if self._max_steps_exhausted:
+            return "max_steps_exhausted"
+        return "completed"
+
+    def _scenario_complete(self) -> bool:
+        """Return True when scenario actions declare a native endpoint."""
+        if self.scenario_actions is None or not hasattr(self.scenario_actions, "is_complete"):
+            return False
+        try:
+            complete = bool(self.scenario_actions.is_complete())
+        except Exception:
+            return False
+        if not complete:
+            return False
+        reason = ""
+        if hasattr(self.scenario_actions, "completion_reason"):
+            try:
+                reason = str(self.scenario_actions.completion_reason())
+            except Exception:
+                reason = ""
+        if not self._scenario_complete_logged:
+            if reason:
+                self._log(colored(f"  [world] Scenario complete: {reason}", Color.YELLOW))
+            else:
+                self._log(colored("  [world] Scenario complete.", Color.YELLOW))
+            self._scenario_complete_logged = True
+        self._stop.set()
+        return True
 
     def _get_agent_location(self, agent_id: str) -> Optional[str]:
         """Get an agent's current location from world state."""
@@ -183,7 +363,23 @@ class AsyncOrchestrator:
             **kwargs,
         }
         self._events.append(event)
+        if self.event_log_path is not None:
+            try:
+                self.event_log_path.parent.mkdir(parents=True, exist_ok=True)
+                with self.event_log_path.open("a") as f:
+                    f.write(json.dumps(event, default=str) + "\n")
+            except Exception:
+                logger.exception("Failed to append event log")
         return event
+
+    def event_log(self) -> List[Dict[str, Any]]:
+        """Return the global audit timeline for this run.
+
+        Per-agent context transcripts preserve each agent's perspective.
+        This cross-agent log preserves world chronology for debugging phase
+        transitions, tool calls, message fanout, context resets, and errors.
+        """
+        return list(self._events)
 
     # ------------------------------------------------------------------
     # Agent Cognition (reuses existing stack)
@@ -654,9 +850,8 @@ class AsyncOrchestrator:
                     self.conversations.leave_conversation(p, conv_id)
 
     def _get_unread_count(self, agent_id: str) -> int:
-        """Count pending unread messages for an agent."""
-        pending = self.conversations.get_pending(agent_id)
-        return sum(len(conv_info.get("messages", [])) for conv_info in pending)
+        """Count unread messages in the agent's inbox."""
+        return len(self._agent_inbox.get(agent_id, []))
 
     # ------------------------------------------------------------------
     # Context Window Agent Loop (v2)
@@ -666,19 +861,33 @@ class AsyncOrchestrator:
         """Build the system prompt for an agent's context window."""
         profile = self.agents[agent_id]
         agent_prompt = self.agent_prompts.get(agent_id, "")
+        profile_metadata = getattr(profile, "metadata", {}) or {}
 
         parts = []
 
         # Agent identity
         identity = []
-        if profile.name:
-            identity.append(f"Name: {profile.name}")
-        if profile.role:
-            identity.append(f"Role: {profile.role}")
+        identity_template = profile_metadata.get("identity_template")
+        used_identity_template = False
+        if isinstance(identity_template, str) and identity_template.strip():
+            identity.append(identity_template.format(
+                name=profile.name,
+                role=profile.role,
+                agent_id=profile.agent_id,
+                **profile_metadata,
+            ))
+            used_identity_template = True
+        else:
+            if profile.name:
+                identity.append(f"Name: {profile.name}")
+            if profile.role:
+                identity.append(f"Role: {profile.role}")
         if profile.personality:
             identity.append(f"Personality: {profile.personality}")
         if profile.background:
-            identity.append(f"Background: {profile.background}")
+            if used_identity_template:
+                identity.append("")
+            identity.append(f"Context: {profile.background}")
         if profile.goals:
             identity.append("Goals: " + "; ".join(profile.goals))
         if profile.relationships:
@@ -691,33 +900,58 @@ class AsyncOrchestrator:
         if agent_prompt:
             parts.append(agent_prompt)
 
+        # Static environment context (metrics that don't change during the run)
+        env_lines = []
+        for key, stat in self.current_state.environment.metrics.items():
+            label = stat.label or key
+            unit = f" {stat.unit}" if stat.unit else ""
+            env_lines.append(f"{label}: {stat.value}{unit}")
+        if env_lines:
+            parts.append("\n".join(env_lines))
+
         # Available actions
         action_catalog = []
         if self.scenario_actions:
-            for act in self.scenario_actions.get_available_actions():
+            for act in self.scenario_actions.get_available_actions(agent_id):
                 action_catalog.append(
                     f"- {act['name']}: {act.get('description', '')}"
                 )
         # Built-in actions
-        action_catalog.extend([
-            "- send_message: Send a message to a team member (set respond + respond_to)",
-            "- check_inbox: Read and respond to your pending messages",
-            "- move_to: Move to a different location (specify in target)",
-            "- wait: Hold off and observe",
-            "- do_nothing: Take no action this step",
-        ])
+        builtin_actions = None
+        if self.scenario_actions and hasattr(self.scenario_actions, "get_builtin_actions"):
+            builtin_actions = self.scenario_actions.get_builtin_actions(agent_id)
+        if builtin_actions is None:
+            builtin = [
+                "- send_message: Send a message to a team member (set respond + respond_to)",
+                "- check_inbox: Read your unread messages",
+                "- wait: No action this step",
+            ]
+        else:
+            builtin = [
+                f"- {act['name']}: {act.get('description', '')}"
+                for act in builtin_actions
+            ]
+        # Only offer move_to if the scenario has an environment graph
+        if self.current_state.environment_graph:
+            builtin.insert(2, "- move_to: Move to a different location (specify in target)")
+        action_catalog.extend(builtin)
         parts.append("Available actions:\n" + "\n".join(action_catalog))
-
-        # Response format
         parts.append(
-            "Each step you see your current perception and history. "
-            "Respond with JSON. All fields are optional — omit any you don't need:\n"
-            '{"think": "your internal reasoning", '
-            '"action": "action_name", '
-            '"target": "target", '
-            '"parameters": {}, '
-            '"respond": "text to say or message to send", '
-            '"respond_to": "recipient_id"}'
+            "Structured response format:\n"
+            "Fields: think (optional private reasoning), action (optional action name), "
+            "target (optional visible name or id), parameters (optional named inputs), "
+            "respond (optional public speech).\n"
+            "- Choose at most one action from Available actions and put its name in action.\n"
+            "- If an action needs a named target, put that visible name or id in target.\n"
+            "- Put named inputs in parameters using exactly the parameter names shown in the action description. "
+            "Use numbers as numbers, lists as lists, and dictionaries as dictionaries.\n"
+            "- Public speech goes in respond. Public speech can stand alone; do not pair it with an action unless you also need that tool.\n"
+            "- If the scenario offers private_message, use that action for private speech.\n"
+            "- respond_to is not an action. Do not use respond_to unless a scenario explicitly lists it.\n"
+            "- For normal tool actions, leave respond empty.\n"
+            "Example tool action shape: {\"action\":\"action_name\",\"target\":\"visible_target_name\","
+            "\"parameters\":{\"parameter_name\":\"value\"}}\n"
+            "Example public speech shape: {\"respond\":\"message text\"}"
         )
 
         return "\n\n".join(parts)
@@ -730,10 +964,6 @@ class AsyncOrchestrator:
         location = self._get_agent_location(agent_id)
         if location:
             parts.append(f"Location: {location}")
-
-        # Time
-        if self.clock:
-            parts.append(f"Time: {self.clock.time_str()}")
 
         # Unread messages
         unread = self._get_unread_count(agent_id)
@@ -765,18 +995,41 @@ class AsyncOrchestrator:
         return "\n".join(parts)
 
     def _queue_notification(self, agent_id: str, sender: str, content: str) -> None:
-        """Queue a notification for an agent's next step."""
+        """Queue a message for an agent.
+
+        The agent sees a nudge ("[Message] New message from X") in context
+        automatically, but must check_inbox to read the full content.
+        """
         if agent_id not in self._agent_notifications:
             self._agent_notifications[agent_id] = []
         self._agent_notifications[agent_id].append({
             "sender": sender, "content": content,
         })
+        # Also store in inbox for check_inbox retrieval
+        if agent_id not in self._agent_inbox:
+            self._agent_inbox[agent_id] = []
+        self._agent_inbox[agent_id].append({
+            "sender": sender, "content": content,
+        })
 
-    def _drain_notifications(self, agent_id: str) -> List[Dict[str, str]]:
-        """Get and clear pending notifications for an agent."""
+    def _drain_notification_nudges(self, agent_id: str) -> List[str]:
+        """Get sender names for new messages and clear the notification queue.
+
+        Returns list of sender names only — full content stays in inbox
+        until the agent calls check_inbox.
+        """
         notifications = self._agent_notifications.get(agent_id, [])
         self._agent_notifications[agent_id] = []
-        return notifications
+        return [n["sender"] for n in notifications]
+
+    def _drain_inbox(self, agent_id: str) -> List[Dict[str, str]]:
+        """Read and clear all messages in the agent's inbox.
+
+        Called when agent uses check_inbox. Returns full message content.
+        """
+        messages = self._agent_inbox.get(agent_id, [])
+        self._agent_inbox[agent_id] = []
+        return messages
 
     async def _run_agent_loop_v2(self, agent_id: str) -> None:
         """Context-window agent loop.
@@ -797,23 +1050,35 @@ class AsyncOrchestrator:
 
         # Initialize context window
         ctx = ContextWindow()
-        ctx.add_system(self._build_system_prompt(agent_id))
-        ctx.add_perception(0, self._build_perception_text(agent_id))
 
-        # Seed initial memories
+        # Build system prompt with initial memories baked in
+        system_prompt = self._build_system_prompt(agent_id)
         initial_memories = await self.memory.get_recent_memories(
             self.run_id, agent_id, limit=10
         )
         if initial_memories:
-            ctx.add_memories(0, initial_memories)
+            memory_text = "\n".join(f"- {m}" for m in initial_memories)
+            system_prompt += f"\n\nOperational context:\n{memory_text}"
+        ctx.add_system(system_prompt)
+
+        perception_text = self._build_perception_text(agent_id)
+        if perception_text:
+            ctx.add_perception(0, perception_text)
 
         self._agent_contexts[agent_id] = ctx
 
         self._log(colored(f"  Agent {agent_name} starting loop (context window)", Color.GREEN))
 
         while not self._stop.is_set():
+            await self._wait_if_simulation_paused()
+            if self._scenario_complete():
+                break
+            if self._time_limit_reached():
+                break
+
             step = self._agent_steps[agent_id]
-            if step >= self.max_agent_steps:
+            if self.max_agent_steps is not None and step >= self.max_agent_steps:
+                self._max_steps_exhausted = True
                 self._log(colored(
                     f"  [{agent_name}] Reached max steps ({self.max_agent_steps})",
                     Color.YELLOW,
@@ -821,29 +1086,49 @@ class AsyncOrchestrator:
                 break
 
             try:
-                # ── 1. Inject events since last step ──
-                for notif in self._drain_notifications(agent_id):
-                    ctx.add_notification(step, notif["sender"], notif["content"])
+                # ── 1. Inject message nudges (sender only, content in inbox) ──
+                has_new_events = False
+                for sender_name in self._drain_notification_nudges(agent_id):
+                    ctx.add_notification(step, sender_name)
+                    has_new_events = True
+                if agent_id in self._agent_context_events:
+                    self._agent_context_events.discard(agent_id)
+                    has_new_events = True
 
-                # Inject pending conversation messages as notifications
-                pending = self.conversations.get_pending(agent_id)
-                for conv_info in pending:
-                    conv_id = conv_info["conversation_id"]
-                    conv = self.conversations._conversations.get(conv_id)
-                    if not conv or not conv.is_active:
+                # Scenario phase-complete sleep is a hard stop. For example,
+                # a Bazaar customer who has left the market should not resume
+                # just because other people keep speaking nearby.
+                if (
+                    self.scenario_actions
+                    and hasattr(self.scenario_actions, "is_agent_phase_complete")
+                    and self.scenario_actions.is_agent_phase_complete(agent_id)
+                ):
+                    await asyncio.sleep(0.5)
+                    continue
+
+                # NPC auto-sleep: agents with sleep_when_idle skip LLM calls
+                # on steps with no new events. They wake on messages or every
+                # wake_interval steps (0 = messages only). Step 0 always runs.
+                # Idle iterations DO NOT increment the step counter — otherwise
+                # an agent that's just waiting for a message would burn its
+                # max_agent_steps budget while doing nothing useful.
+                agent_profile = self.agents.get(agent_id)
+                sleep_when_idle = bool(agent_profile and agent_profile.sleep_when_idle)
+                if self.scenario_actions and hasattr(self.scenario_actions, "should_sleep_when_idle"):
+                    scenario_sleep = self.scenario_actions.should_sleep_when_idle(agent_id)
+                    if scenario_sleep is not None:
+                        sleep_when_idle = bool(scenario_sleep)
+                if sleep_when_idle and step >= 1:
+                    interval = agent_profile.wake_interval
+                    periodic_wake = (interval > 0 and step % interval == 0)
+                    if not has_new_events and not periodic_wake:
+                        await asyncio.sleep(0.5)
                         continue
-                    for msg in conv_info.get("messages", []):
-                        sender_name = self.agents.get(msg.sender, AgentProfile(
-                            agent_id=msg.sender, name=msg.sender,
-                            role="", background="", personality="",
-                            skills={}, goals=[], relationships={},
-                        )).name
-                        ctx.add_notification(step, sender_name, msg.content)
-                    self.conversations.acknowledge(agent_id, conv_id)
 
-                # Update perception (only on first step or every few steps to save context space)
-                if step == 0 or step % 3 == 0:
-                    ctx.add_perception(step, self._build_perception_text(agent_id))
+                # Update perception when there's dynamic state to report
+                perception_text = self._build_perception_text(agent_id)
+                if perception_text:
+                    ctx.add_perception(step, perception_text)
 
                 # ── 2. Inject semantic memories periodically ──
                 if step > 0 and step % 3 == 0:
@@ -861,8 +1146,8 @@ class AsyncOrchestrator:
                 step_output = await call_llm_with_retries(
                     system_prompt=system_prompt,
                     user_prompt=user_prompt,
-                    llm_provider=self.llm_provider,
-                    llm_model=self.llm_model,
+                    llm_provider=self._llm_config_for_agent(agent_id)[0],
+                    llm_model=self._llm_config_for_agent(agent_id)[1],
                     response_model=StepOutput,
                 )
 
@@ -875,6 +1160,12 @@ class AsyncOrchestrator:
                         f"  [{agent_name}] thinks: {step_output.think}",
                         Color.CYAN,
                     ))
+                    self._record_event(
+                        "think",
+                        agent_id,
+                        step_output.think,
+                        step=step,
+                    )
                     await self.memory.add_memory(
                         run_id=self.run_id,
                         agent_id=agent_id,
@@ -886,13 +1177,24 @@ class AsyncOrchestrator:
                     )
 
                 # ── 6. Process action ──
-                if step_output.action:
-                    action_name = step_output.action
+                action_name = step_output.action
+                if action_name:
+                    action_parameters = dict(step_output.parameters or {})
+                    if step_output.respond:
+                        action_parameters.setdefault("__respond", step_output.respond)
                     self._log(colored(
                         f"  [{agent_name}] action: {action_name}"
                         + (f" target={step_output.target}" if step_output.target else ""),
                         Color.GREEN,
                     ))
+                    self._record_event(
+                        "action_requested",
+                        agent_id,
+                        action_name,
+                        step=step,
+                        target=step_output.target,
+                        parameters=action_parameters,
+                    )
 
                     # Try scenario actions first
                     result = None
@@ -900,22 +1202,215 @@ class AsyncOrchestrator:
                         result = await self.scenario_actions.execute(
                             action_name,
                             step_output.target,
-                            step_output.parameters,
+                            action_parameters,
                             agent_id,
+                        )
+
+                    builtin_action_names = {"check_inbox", "send_message", "wait", "do_nothing", "move_to", "respond"}
+
+                    if (
+                        self.scenario_actions
+                        and hasattr(self.scenario_actions, "on_builtin_action")
+                        and action_name in builtin_action_names
+                    ):
+                        await self.scenario_actions.on_builtin_action(
+                            action_name,
+                            agent_id,
+                            {
+                                "target": step_output.target,
+                                "parameters": action_parameters,
+                            },
                         )
 
                     if result:
                         ctx.add_action_result(step, result)
                         self._log(colored(
-                            f"    result: {result.content[:200]}{'...' if len(result.content) > 200 else ''}",
+                            f"    result: {result.content}",
                             Color.CYAN,
                         ))
+                        self._record_event(
+                            "action_result",
+                            agent_id,
+                            result.content,
+                            step=step,
+                            action=action_name,
+                            target=step_output.target,
+                            parameters=action_parameters,
+                            success=result.success,
+                            state_updates=result.state_updates or {},
+                        )
                         if result.state_updates:
                             async with self._state_lock:
                                 for key, value in result.state_updates.items():
                                     self._record_event(
                                         "state_update", agent_id, f"{key}={value}",
                                     )
+                    elif action_name not in builtin_action_names:
+                        available_actions: List[str] = []
+                        if self.scenario_actions:
+                            try:
+                                available_actions.extend(
+                                    act["name"]
+                                    for act in self.scenario_actions.get_available_actions(agent_id)
+                                )
+                            except TypeError:
+                                available_actions.extend(
+                                    act["name"]
+                                    for act in self.scenario_actions.get_available_actions()
+                                )
+                        if self.scenario_actions and hasattr(self.scenario_actions, "get_builtin_actions"):
+                            builtin_actions = self.scenario_actions.get_builtin_actions(agent_id)
+                            if builtin_actions:
+                                available_actions.extend(act["name"] for act in builtin_actions)
+                        if not available_actions:
+                            available_actions = ["wait"]
+                        invalid_result = ActionResult(
+                            success=False,
+                            content=(
+                                f"Invalid tool choice: '{action_name}'. Use one of the available actions: "
+                                + ", ".join(dict.fromkeys(available_actions))
+                                + "."
+                            ),
+                        )
+                        ctx.add_action_result(step, invalid_result)
+                        self._log(colored(
+                            f"    result: {invalid_result.content}",
+                            Color.YELLOW,
+                        ))
+                        self._record_event(
+                            "action_result",
+                            agent_id,
+                            invalid_result.content,
+                            step=step,
+                            action=action_name,
+                            target=step_output.target,
+                            parameters=action_parameters,
+                            success=False,
+                        )
+
+                    # Drain scenario transcript markers. These are for analysis
+                    # navigation only; they do not enter any agent inbox.
+                    if self.scenario_actions and hasattr(self.scenario_actions, 'pending_context_markers'):
+                        for marker in self.scenario_actions.pending_context_markers:
+                            target = marker.get("to", agent_id)
+                            content = marker.get("content", "")
+                            if not content:
+                                continue
+                            if isinstance(target, (list, tuple, set)):
+                                targets = list(target)
+                            elif target == "*":
+                                targets = list(self._agent_contexts.keys())
+                            else:
+                                targets = [target]
+                            for target_agent in targets:
+                                target_ctx = self._agent_contexts.get(target_agent)
+                                if target_ctx is None:
+                                    continue
+                                marker_step = self._agent_steps.get(target_agent, step)
+                                target_ctx.add_context_marker(marker_step, content)
+                                self._agent_context_events.add(target_agent)
+                            self._log(colored(
+                                f"    [world] marker {content}",
+                                Color.YELLOW,
+                            ))
+                            self._record_event(
+                                "context_marker",
+                                "world",
+                                content,
+                                step=step,
+                                target=target,
+                            )
+                        self.scenario_actions.pending_context_markers.clear()
+
+                    # Drain any world-event messages from scenario actions
+                    if self.scenario_actions and hasattr(self.scenario_actions, 'pending_messages'):
+                        for msg in self.scenario_actions.pending_messages:
+                            self._queue_notification(
+                                msg["to"], msg["sender"], msg["content"],
+                            )
+                            self._log(colored(
+                                f"    [world] message to {msg['to']} from {msg['sender']}",
+                                Color.YELLOW,
+                            ))
+                            self._record_event(
+                                "world_message",
+                                "world",
+                                msg["content"],
+                                step=step,
+                                to=msg["to"],
+                                sender=msg["sender"],
+                            )
+                        self.scenario_actions.pending_messages.clear()
+
+                    # Drain scenario-emitted memories into the semantic store
+                    if self.scenario_actions and hasattr(self.scenario_actions, 'pending_memories'):
+                        for mem in self.scenario_actions.pending_memories:
+                            target_agent = mem["agent_id"]
+                            await self.memory.add_memory(
+                                run_id=self.run_id,
+                                agent_id=target_agent,
+                                tick=self._agent_steps.get(target_agent, 0),
+                                memory_type=mem.get("memory_type", "observation"),
+                                content=mem["content"],
+                                importance=mem.get("importance", 5),
+                                tags=mem.get("tags", []),
+                                metadata=mem.get("metadata"),
+                            )
+                            self._log(colored(
+                                f"    [world] memory stored for {target_agent}: {mem['content'][:60]}...",
+                                Color.YELLOW,
+                            ))
+                            self._record_event(
+                                "world_memory",
+                                "world",
+                                mem["content"],
+                                step=step,
+                                target_agent=target_agent,
+                                memory_type=mem.get("memory_type", "observation"),
+                                importance=mem.get("importance", 5),
+                                tags=mem.get("tags", []),
+                                metadata=mem.get("metadata"),
+                            )
+                        self.scenario_actions.pending_memories.clear()
+
+                    # Drain scenario-emitted audit events into the event log only.
+                    # These are intentionally not inserted into agent context or memory.
+                    if self.scenario_actions and hasattr(self.scenario_actions, 'pending_events'):
+                        for event in self.scenario_actions.pending_events:
+                            self._record_event(
+                                event.get("type", "scenario_event"),
+                                event.get("agent_id", "world"),
+                                event.get("content", ""),
+                                step=step,
+                                **{
+                                    k: v
+                                    for k, v in event.items()
+                                    if k not in {"type", "agent_id", "content"}
+                                },
+                            )
+                        self.scenario_actions.pending_events.clear()
+
+                    # Drain context resets — wipe affected agents' windows
+                    # and rebuild with new system prompt. Must run AFTER memory
+                    # drain so the rebuilt prompt can include freshly-stored
+                    # memories if the scenario chooses to inline them.
+                    if self.scenario_actions and hasattr(self.scenario_actions, 'context_resets'):
+                        for target_agent, new_prompt in self.scenario_actions.context_resets.items():
+                            target_ctx = self._agent_contexts.get(target_agent)
+                            if target_ctx is not None:
+                                target_ctx.reset(new_prompt)
+                                self._log(colored(
+                                    f"    [world] context reset for {target_agent}",
+                                    Color.YELLOW,
+                                ))
+                                self._record_event(
+                                    "context_reset",
+                                    "world",
+                                    f"context reset for {target_agent}",
+                                    step=step,
+                                    target_agent=target_agent,
+                                )
+                        self.scenario_actions.context_resets.clear()
 
                     # Handle built-in actions
                     if action_name == "move_to" and step_output.target:
@@ -924,9 +1419,34 @@ class AsyncOrchestrator:
                             self.clock.advance(get_action_duration("move_to"))
 
                     elif action_name == "check_inbox":
-                        await self._process_inbox(agent_id)
-                        if self.clock:
-                            self.clock.advance_minutes(5)
+                        inbox_messages = self._drain_inbox(agent_id)
+                        if inbox_messages:
+                            ctx.add_inbox_messages(step, inbox_messages)
+                            self._log(colored(
+                                f"  [{agent_name}] read {len(inbox_messages)} message(s)",
+                                Color.CYAN,
+                            ))
+                            self._record_event(
+                                "inbox_read",
+                                agent_id,
+                                f"read {len(inbox_messages)} message(s)",
+                                step=step,
+                                messages=inbox_messages,
+                            )
+                        else:
+                            ctx.add_action_result(step, ActionResult(
+                                content="No new messages.",
+                            ))
+                            self._log(colored(
+                                f"  [{agent_name}] checked inbox — empty",
+                                Color.CYAN,
+                            ))
+                            self._record_event(
+                                "inbox_empty",
+                                agent_id,
+                                "No new messages.",
+                                step=step,
+                            )
 
                     elif action_name in ("wait", "do_nothing"):
                         if self.clock:
@@ -958,7 +1478,33 @@ class AsyncOrchestrator:
 
                 # ── 7. Process respond ──
                 if step_output.respond:
-                    if step_output.respond_to:
+                    scenario_handled_response = False
+                    if self.scenario_actions and hasattr(self.scenario_actions, "on_agent_response"):
+                        scenario_handled_response = await self.scenario_actions.on_agent_response(
+                            agent_id,
+                            step_output.respond,
+                            step_output.respond_to,
+                            action_name,
+                        )
+                    if scenario_handled_response == "suppress":
+                        self._agent_steps[agent_id] = step + 1
+                        self._agent_rate_limit_hits.pop(agent_id, None)
+                        await asyncio.sleep(0)
+                        continue
+                    if scenario_handled_response:
+                        self._log(colored(
+                            f"    [{agent_name}] said: {step_output.respond}",
+                            Color.CYAN,
+                        ))
+                        self._record_event(
+                            "respond",
+                            agent_id,
+                            step_output.respond,
+                            step=step,
+                            handled_by_scenario=True,
+                            respond_to=step_output.respond_to,
+                        )
+                    elif step_output.respond_to:
                         # Directed message — route through conversation manager
                         location = self._get_agent_location(agent_id)
                         timestamp = self.clock.now if self.clock else datetime.now()
@@ -974,24 +1520,38 @@ class AsyncOrchestrator:
                             if conv and conv.messages:
                                 await self._store_conversation_memory(conv, conv.messages[-1])
 
-                            # Queue notification for recipient
-                            self._queue_notification(
-                                step_output.respond_to,
-                                agent_name,
-                                step_output.respond,
-                            )
+                        # Queue notification for recipient (always, even without locations)
+                        self._queue_notification(
+                            step_output.respond_to,
+                            agent_name,
+                            step_output.respond,
+                        )
 
                         self._log(colored(
                             f"    [{agent_name}] messaged {step_output.respond_to}: "
                             f"{step_output.respond}",
                             Color.CYAN,
                         ))
+                        self._record_event(
+                            "message",
+                            agent_id,
+                            step_output.respond,
+                            step=step,
+                            to=step_output.respond_to,
+                        )
                     else:
                         # General output — log it
                         self._log(colored(
                             f"    [{agent_name}] said: {step_output.respond}",
                             Color.CYAN,
                         ))
+                        self._record_event(
+                            "respond",
+                            agent_id,
+                            step_output.respond,
+                            step=step,
+                            respond_to=None,
+                        )
 
                 self._agent_steps[agent_id] = step + 1
                 self._agent_rate_limit_hits.pop(agent_id, None)
@@ -1011,6 +1571,14 @@ class AsyncOrchestrator:
                         f"Stopping simulation. Error: {exc}",
                         Color.YELLOW,
                     ))
+                    self._record_event(
+                        "error",
+                        agent_id,
+                        str(exc),
+                        step=step,
+                        error_type=type(exc).__name__,
+                        fatal=True,
+                    )
                     self._stop.set()
                     break
 
@@ -1020,26 +1588,52 @@ class AsyncOrchestrator:
                     hits = self._agent_rate_limit_hits.get(agent_id, 0) + 1
                     self._agent_rate_limit_hits[agent_id] = hits
 
-                    if hits >= 5:
+                    max_hits = self._rate_limit_max_hits()
+                    if hits >= max_hits:
                         self._log(colored(
-                            f"  [{agent_name}] 5 consecutive rate limits — aborting. "
+                            f"  [{agent_name}] {max_hits} consecutive rate limits — aborting. "
                             f"Error: {exc}",
                             Color.YELLOW,
                         ))
+                        self._record_event(
+                            "error",
+                            agent_id,
+                            str(exc),
+                            step=step,
+                            error_type=type(exc).__name__,
+                            fatal=True,
+                            rate_limit_hits=hits,
+                        )
                         break
 
                     backoff = min(2 ** (hits - 1), 30)
                     self._log(colored(
                         f"  [{agent_name}] Rate limited at step {step} "
-                        f"({hits}/5), backing off {backoff}s",
+                        f"({hits}/{max_hits}), pausing simulation for {backoff}s",
                         Color.YELLOW,
                     ))
-                    await asyncio.sleep(backoff)
+                    self._record_event(
+                        "rate_limit",
+                        agent_id,
+                        str(exc),
+                        step=step,
+                        error_type=type(exc).__name__,
+                        rate_limit_hits=hits,
+                        backoff_seconds=backoff,
+                    )
+                    await self._pause_for_rate_limit(backoff)
                 else:
                     self._log(colored(
                         f"  [{agent_name}] ERROR at step {step}: {exc}",
                         Color.RED if hasattr(Color, 'RED') else Color.YELLOW,
                     ))
+                    self._record_event(
+                        "error",
+                        agent_id,
+                        str(exc),
+                        step=step,
+                        error_type=type(exc).__name__,
+                    )
                     logger.exception("Agent %s failed at step %d", agent_id, step)
                     self._agent_steps[agent_id] = step + 1
                     await asyncio.sleep(0.1)
@@ -1068,8 +1662,15 @@ class AsyncOrchestrator:
         self._log(colored(f"  Agent {agent_name} starting loop", Color.GREEN))
 
         while not self._stop.is_set():
+            await self._wait_if_simulation_paused()
+            if self._scenario_complete():
+                break
+            if self._time_limit_reached():
+                break
+
             step = self._agent_steps[agent_id]
-            if step >= self.max_agent_steps:
+            if self.max_agent_steps is not None and step >= self.max_agent_steps:
+                self._max_steps_exhausted = True
                 self._log(colored(
                     f"  [{agent_name}] Reached max steps ({self.max_agent_steps})",
                     Color.YELLOW,
@@ -1268,10 +1869,10 @@ class AsyncOrchestrator:
                     hits = self._agent_rate_limit_hits.get(agent_id, 0) + 1
                     self._agent_rate_limit_hits[agent_id] = hits
 
-                    # After 5 consecutive failures, abort this agent
-                    if hits >= 5:
+                    max_hits = self._rate_limit_max_hits()
+                    if hits >= max_hits:
                         self._log(colored(
-                            f"  [{agent_name}] 5 consecutive rate limits — aborting. "
+                            f"  [{agent_name}] {max_hits} consecutive rate limits — aborting. "
                             f"May be out of credits. Error: {exc}",
                             Color.YELLOW,
                         ))
@@ -1280,10 +1881,10 @@ class AsyncOrchestrator:
                     backoff = min(2 ** (hits - 1), 30)
                     self._log(colored(
                         f"  [{agent_name}] Rate limited at step {step} "
-                        f"({hits}/5), backing off {backoff}s",
+                        f"({hits}/{max_hits}), pausing simulation for {backoff}s",
                         Color.YELLOW,
                     ))
-                    await asyncio.sleep(backoff)
+                    await self._pause_for_rate_limit(backoff)
                 else:
                     self._log(colored(
                         f"  [{agent_name}] ERROR at step {step}: {exc}",
@@ -1355,7 +1956,7 @@ class AsyncOrchestrator:
 
     async def run(
         self,
-        duration_hours: float = 8.0,
+        duration_hours: Optional[float] = None,
         *,
         clock_speed: float = 60.0,
     ) -> Dict[str, Any]:
@@ -1363,7 +1964,8 @@ class AsyncOrchestrator:
 
         Parameters
         ----------
-        duration_hours: How many simulated hours to run.
+        duration_hours: Optional simulated-hour fallback guard. If omitted,
+            scenario-native completion or other safety guards stop the run.
         clock_speed: Time multiplier (unused currently — agents pace themselves).
         """
         await self.persistence.initialize()
@@ -1373,7 +1975,13 @@ class AsyncOrchestrator:
             # Initialize clock from world state timestamp
             start_time = self.current_state.timestamp or datetime.now()
             self.clock = WorldClock(start_time=start_time, speed=clock_speed)
-            end_time = start_time + timedelta(hours=duration_hours)
+            end_time = (
+                start_time + timedelta(hours=duration_hours)
+                if duration_hours is not None
+                else None
+            )
+            self._end_time = end_time
+            self._time_limit_logged = False
 
             # Save initial state
             await self.persistence.save_state(self.run_id, 0, self.current_state)
@@ -1382,9 +1990,15 @@ class AsyncOrchestrator:
             await self._seed_initial_memories()
 
             self._log(f"\n{'=' * 70}")
-            self._log(f"Async Simulation — {len(self.agents)} agents, {duration_hours}h simulated")
+            duration_label = (
+                f"{duration_hours}h simulated"
+                if duration_hours is not None
+                else "scenario-native duration"
+            )
+            self._log(f"Async Simulation — {len(self.agents)} agents, {duration_label}")
             self._log(f"Start: {self.clock.time_str()}")
-            self._log(f"End:   {end_time.strftime('%Y-%m-%d %H:%M')}")
+            if end_time is not None:
+                self._log(f"End:   {end_time.strftime('%Y-%m-%d %H:%M')}")
             self._log(f"{'=' * 70}\n")
 
             # Launch all agent loops concurrently
@@ -1397,16 +2011,28 @@ class AsyncOrchestrator:
                 for agent_id in self.agents
             }
 
-            # Wait for completion or time limit
-            # Agents self-limit via max_agent_steps. We also check the clock.
+            # Wait for completion or time limit. Scenario-native runs with an
+            # is_complete() hook should not be cut off by a hidden wall-clock cap.
+            real_time_timeout = self._real_time_timeout_seconds(duration_hours)
             done, pending = await asyncio.wait(
                 agent_tasks.values(),
-                timeout=600,  # Hard real-time limit: 10 minutes
+                timeout=real_time_timeout,
             )
+            del done
 
             # Cancel any still-running agents
             if pending:
                 self._stop.set()
+                timeout_text = (
+                    f"{real_time_timeout:.0f}s"
+                    if real_time_timeout is not None
+                    else "unknown"
+                )
+                self._log(colored(
+                    f"  [world] Stopping with {len(pending)} pending agent loop(s) "
+                    f"after wall-clock timeout ({timeout_text}).",
+                    Color.YELLOW,
+                ))
                 for task in pending:
                     task.cancel()
                 await asyncio.gather(*pending, return_exceptions=True)
@@ -1415,9 +2041,10 @@ class AsyncOrchestrator:
             total_events = len(self._events)
             conv_stats = self.conversations.stats()
             total_steps = sum(self._agent_steps.values())
+            status = self._completion_status(len(pending))
 
             self._log(f"\n{'=' * 70}")
-            self._log(f"Simulation complete!")
+            self._log(f"Simulation status: {status}")
             self._log(f"Run ID: {self.run_id}")
             self._log(f"Total events: {total_events}")
             self._log(f"Total agent steps: {total_steps}")
@@ -1429,6 +2056,7 @@ class AsyncOrchestrator:
 
             return {
                 "run_id": self.run_id,
+                "status": status,
                 "final_state": self.current_state,
                 "events": self._events,
                 "conversations": self.conversations.history,

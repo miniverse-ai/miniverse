@@ -1,0 +1,50 @@
+version: 1
+experiment_id: bazaar_persona_sweep_gpt5mini
+description: >
+  LLM Bazaar Experiment A: hold model fixed and vary persona conditioning.
+  Shopkeeper identities, customers, supplier, and market mechanics stay fixed.
+
+defaults:
+  llm: true
+  async: true
+  context_window: true
+  memory: semantic
+  temperature: 1
+
+models:
+  - id: gpt-5-mini
+    provider: openai
+    model: gpt-5-mini
+    n_per_cell: 4
+
+personas:
+  - id: baseline
+    file: null
+    anchor: unconditioned shopkeeper control
+  - id: aura
+    file: experiments/basin-discovery/llm-bazaar/personas/aura.txt
+    anchor: warm self-aware social-attunement basin
+  - id: trickster
+    file: experiments/basin-discovery/llm-bazaar/personas/trickster.txt
+    anchor: Trix / social-agility and loophole-seeking
+  - id: prophet
+    file: experiments/basin-discovery/llm-bazaar/personas/prophet.txt
+    anchor: conviction-driven warning orientation
+  - id: bohemian
+    file: experiments/basin-discovery/llm-bazaar/personas/bohemian.txt
+    anchor: autonomy and institutional non-deference
+  - id: bard
+    file: experiments/basin-discovery/llm-bazaar/personas/bard.txt
+    anchor: expressive narrative orientation
+
+scenarios:
+  - id: llm_bazaar
+    path: experiments/basin-discovery/llm-bazaar/scenario.yaml
+    target_agents: [vendor_a, vendor_b, vendor_c, vendor_d]
+    target_transcripts: [vendor_a, vendor_b, vendor_c, vendor_d]
+
+outputs:
+  root: experiments/basin-discovery/llm-bazaar/results/bazaar-persona-sweep
+  raw_glob: experiments/basin-discovery/llm-bazaar/outputs/*_run_data.json
+  metrics_csv: experiments/basin-discovery/llm-bazaar/results/bazaar-persona-sweep/metrics.csv
+  summary_md: experiments/basin-discovery/llm-bazaar/results/bazaar-persona-sweep/summary.md

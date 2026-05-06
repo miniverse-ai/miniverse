@@ -1,6 +1,7 @@
 # Raw auto-saved run outputs (not curated)
 outputs/
 test-runs/
+results/
 
 # Temp merged scenario files
 *-????????.yaml
