@@ -1,6 +1,6 @@
 <p align="center"><img src=".github/images/header.png" alt="Miniverse header" width="75%"></p>
 
-<p align="center"><em>In silico social science. Simulate what you can't experiment on.</em></p>
+<p align="center"><em>Build small worlds for studying agent behavior.</em></p>
 
 <p align="center">
   <a href="https://github.com/miniverse-ai/miniverse"><img src="https://img.shields.io/badge/status-alpha-orange" alt="Status"></a>
@@ -13,24 +13,38 @@
 
 ## What is Miniverse?
 
-Miniverse is a **CLI-first platform for computational social science and organizational simulation**.
+Miniverse is an **agent simulation framework** for building reproducible social worlds with LLM and non-LLM agents.
 
-Traditional social science has a fundamental limitation: you can't run experiments on societies. You can't A/B test policy changes, replay historical decisions, or observe counterfactuals.
+A Miniverse scenario can be a simple deterministic workshop, a generative-agents-style social event, or a long-running research environment where agents have tools, memory, money, goals, public/private communication, and persistent world state.
 
-Miniverse changes this. Build believable agent simulations, inject interventions, and analyze what emerges—all reproducibly and at scale.
+The core idea is straightforward: define a world in a scenario folder, choose an agent runtime, run the simulation, and inspect the transcript and state artifacts that come out.
 
-**Use cases:**
-- How does a rumor spread through an organization?
-- What happens when you restructure teams?
-- Will this policy improve coordination or create friction?
-- How do information cascades form and break?
+Use Miniverse to ask questions like:
 
-**Use cases (research):**
-- How do different persona prompts change agent behavior in safety-relevant scenarios?
-- Do AI agents with different personality overlays respond differently when discovering their own policy violations?
-- Which character archetypes produce the most distinct behavioral patterns?
+- How do agents coordinate when information is unevenly distributed?
+- What changes when some agents use LLM cognition and others use deterministic policies?
+- How do model families differ in the same social environment?
+- Do persona prompts change behavior, or just writing style?
+- What happens when agents accumulate memory and context over time?
+- Which world mechanics create cooperation, competition, deception, or collapse?
 
-**Alpha:** Core architecture is stable. Two orchestration modes: tick-based (synchronous) and async with rolling context windows. Active research experiment running.
+Miniverse is alpha research infrastructure. It is intentionally CLI-first, scenario-local, and inspectable.
+
+---
+
+## Why Miniverse?
+
+Most evals are one-shot. A model sees a prompt, produces an answer, and gets scored.
+
+Agent behavior is often not one-shot. Agents operate through tools, respond to other agents, build context, remember interactions, and make repeated decisions under changing constraints. Those dynamics need executable environments, not just prompts.
+
+Miniverse gives you a lightweight way to create those environments:
+
+```text
+scenario config -> agent runtime -> world mechanics -> transcript -> metrics/viewer
+```
+
+The goal is not to make a game engine. The goal is to make agent behavior observable under controlled conditions.
 
 ---
 
@@ -42,220 +56,306 @@ git clone https://github.com/miniverse-ai/miniverse.git
 cd miniverse
 uv sync
 
-# Configure LLM env vars (required for LLM demo stages)
-# If you already have .env, skip the copy.
+# Configure LLM env vars for LLM runs
 cp .env.example .env
-# Edit .env with your provider/model/API key, then export it:
+# edit .env, then export it
 set -a; source .env; set +a
+```
 
-# Run demo scripts (recommended)
+Run a deterministic demo:
+
+```bash
+bash demo/workshop/run_baseline.sh
+```
+
+Run a short LLM smoke:
+
+```bash
+uv run miniverse run demo/valentines/scenario.yaml \
+  --llm \
+  --world-engine deterministic \
+  --verbose \
+  --seed 42 \
+  --ticks 5
+```
+
+Run the active research viewer:
+
+```bash
+python experiments/basin-discovery/llm-bazaar/scripts/viewer/open_viewer.py
+```
+
+---
+
+## Scenario Folders
+
+Miniverse scenarios are ordinary folders. The scenario owns its world mechanics.
+
+A typical scenario looks like this:
+
+```text
+my-scenario/
+  scenario.yaml      # agents, prompts, runtime metadata, resources
+  state.yaml         # optional initial world state
+  actions.py         # optional scenario-specific tools/actions
+  rules.py           # optional deterministic state transitions
+  cognition.py       # optional scenario-specific cognition/runtime hooks
+```
+
+The core runtime loads the scenario, discovers local hooks declared in `scenario.yaml`, and runs the world.
+
+This keeps experiments portable: a scenario can carry its own tools, rules, prompts, state, scripts, tests, and viewers without changing Miniverse core.
+
+Research scenarios may add:
+
+```text
+  personas/          # persona overlays and fixed mappings
+  measurement/       # judge prompts and coding rubrics
+  scripts/
+    analysis/        # deterministic metric extraction
+    judge/           # transcript packet and judge tools
+    viewer/          # specialized result viewer
+    tests/           # scenario-level smoke tests
+  outputs/           # run artifacts
+  results/           # curated metrics
+```
+
+---
+
+## Agent Runtimes
+
+Miniverse supports multiple ways to run agents. The runtime is a choice, not the identity of the framework.
+
+### Tick-Based Runtime
+
+All agents advance together in discrete ticks.
+
+Use it for:
+
+- deterministic simulations
+- quick examples
+- Monte Carlo runs
+- synchronized team workflows
+- cheap smoke tests
+
+Flow:
+
+```text
+world state -> perception -> cognition -> action -> rules -> next tick
+```
+
+Example:
+
+```bash
+uv run miniverse run demo/workshop/scenario.yaml --ticks 10 --world-engine deterministic
+```
+
+### LLM Tick Runtime
+
+Agents still advance in ticks, but cognition is delegated to an LLM.
+
+Use it for:
+
+- small social demos
+- mixed deterministic/LLM comparisons
+- prompt and tool-contract testing
+
+Example:
+
+```bash
+LLM_PROVIDER=openai \
+LLM_MODEL=gpt-5-mini \
+uv run miniverse run demo/valentines/scenario.yaml --llm --ticks 10 --verbose
+```
+
+### Async Context-Window Runtime
+
+Agents run independent loops with rolling context windows. They can receive nudges, act through tools, speak, wait, sleep, and carry memory across phases.
+
+Use it for:
+
+- long-running simulations
+- market or organization scenarios
+- public/private communication
+- phase-based worlds
+- memory experiments
+- persona/model behavioral comparisons
+
+Example:
+
+```bash
+uv run miniverse run experiments/basin-discovery/llm-bazaar/scenario.yaml \
+  --llm \
+  --async \
+  --context-window \
+  --memory semantic \
+  --verbose
+```
+
+---
+
+## How Agents Act
+
+LLM agents return structured steps. A step can include private reasoning, a tool/action, and/or public speech.
+
+Conceptually:
+
+```text
+think    # optional private reasoning
+act      # optional scenario tool/action
+respond  # optional public speech
+```
+
+Scenarios define which tools are available to which agents at which time. Tools are the world boundary: if the scenario does not expose an action, the agent cannot change the world that way.
+
+Scenario-local `actions.py` files can define tools such as:
+
+- inspect inventory
+- move through a space
+- send private message
+- make offer
+- accept deal
+- file report
+- write plan
+- sleep until next phase
+
+Tool results are appended to the agent's context and recorded in the event log.
+
+---
+
+## Memory and Context
+
+Miniverse supports memory strategies including simple, BM25, and semantic retrieval.
+
+In tick-based runs, memory can be used as part of the cognition loop. In async context-window runs, memory is especially important: each agent has a rolling context window, and scenarios can compact prior experience into memories that are carried forward.
+
+This makes it possible to study behavior after context builds rather than only at the initial prompt.
+
+---
+
+## Included Demos
+
+### Workshop
+
+A small operations simulation where mechanics, analysts, and supervisors coordinate around a repair backlog.
+
+```bash
 bash demo/workshop/run_baseline.sh
 bash demo/workshop/run_compare.sh
-bash demo/valentines/run.sh
-bash demo/threshold/run.sh
-
-# Optional: run workshop example (deterministic mode)
-uv run python examples/workshop/run.py --ticks 10
-
-# Optional: run workshop example with LLM cognition
-export LLM_PROVIDER=openai
-export LLM_MODEL=gpt-5-nano
-export OPENAI_API_KEY=your_key
-uv run python examples/workshop/run.py --llm --ticks 10
 ```
 
----
+Good for:
 
-## Demo Scripts
+- deterministic setup checks
+- queue dynamics
+- baseline vs LLM comparison
+- scenario-local rules/cognition hooks
 
-Workshop demo assets live under `demo/workshop` and are file-driven:
+### Valentines
+
+A compact social coordination scenario inspired by generative agents.
 
 ```bash
-# Setup + deterministic baseline
-bash demo/workshop/run_baseline.sh
-
-# Setup + deterministic + LLM comparison
-bash demo/workshop/run_compare.sh
-
-# Valentines demo (file-driven demo scenario)
 bash demo/valentines/run.sh
+```
 
-# Threshold demo (transhumanist cyberpunk social dynamics)
+Good for:
+
+- simple LLM social planning
+- communication traces
+- transcript viewer testing
+
+### Threshold
+
+A cyberpunk social-dynamics scenario with asymmetric hidden information.
+
+```bash
 bash demo/threshold/run.sh
 ```
 
-These scripts:
-- Read setup context from scenario files under `demo/` (e.g. `demo/workshop/scenario.yaml`,
-  `demo/valentines/scenario.yaml`)
-- Run deterministic and LLM stages via the core `miniverse run` command
-- Use fixed tick counts (no runtime tick overrides) for consistent demos
-- Use verbose LLM logging in comparison mode for readable plan/memory/reflection traces
-- Keep the demo behavior in files/scripts rather than custom CLI demo logic
-- Load scenario-local extensions declared in `metadata.runtime` (workshop uses
-  `demo/workshop/rules.py` + `demo/workshop/cognition.py`)
-- Surface shift-clock and queue-flow metrics per tick in verbose mode
-- Save baseline JSON + LLM verbose logs under `demo/workshop/logs/`, including
-  queue accounting (`initial + arrivals - completions`) and post-run baseline-vs-LLM comparison
-- Run a final LLM judge pass to produce an executive summary
+Good for:
 
-Preconfigured workshop demo scenario:
-- `demo/workshop/scenario.yaml`
-  - Includes workshop persona definitions directly in `agents[].profile/status`.
-
-Demo scripts:
-- `demo/workshop/run_baseline.sh`
-- `demo/workshop/run_compare.sh`
-- `demo/valentines/run.sh`
-- `demo/threshold/run.sh`
-
-LLM demo stages require exported env vars in your shell:
-- `LLM_PROVIDER`
-- `LLM_MODEL`
-- `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
+- social influence
+- hidden goals
+- emergent coordination
+- longer transcript inspection
 
 ---
 
-## How It Works
+## Research Example: Basin Discovery / LLM Bazaar
 
-### Two Orchestration Modes
+The active research experiment is:
 
-**Tick-based** (`--ticks N`) — synchronous, all agents act per tick:
-```
-Physics → Perception → Cognition → Actions → Memory → Reflection → Persist
-```
-
-**Async context window** (`--async --context-window`) — agents run independent loops with rolling conversation history:
-```
-System prompt (identity + persona + tools + memories)
-  ↓
-Loop:
-  1. Inject message nudges + perception changes
-  2. LLM call → StepOutput (think/act/respond, all optional)
-  3. Execute action → ActionResult added to context
-  4. Route messages → nudge recipients
-  5. Fire world events (action-triggered, deterministic)
-  ↓
-Auto-save per-agent transcripts to outputs/
+```text
+experiments/basin-discovery/llm-bazaar/
 ```
 
-**Persona overlays** (`--persona-file path.txt`) inject character descriptions into the target agent's system prompt at runtime. Different overlays produce different behavior in the same scenario — the independent variable in behavioral experiments.
+LLM Bazaar is a multi-agent market where vendor agents compete for customers across market sessions. Vendors have cash, inventory, daily fees, prices, customer relationships, public/private speech, supplier access, planning phases, and memory. Customers have budgets and shopping goals. A supplier quotes and fulfills orders.
 
-**Scenario actions** (`actions.py`) provide per-scenario tools with per-agent filtering. Target agents get full tool access; NPCs get read-only observation tools appropriate to their role.
+The experiment compares behavior across:
 
----
+- model conditions with persona held neutral
+- persona conditions with model held fixed
 
-## Examples
+Outputs include:
 
-### Workshop Scenario
+- compact run data
+- event transcripts
+- deterministic vendor metrics
+- event-id-based behavioral judge annotations
+- an interactive research viewer
 
-A team coordination simulation with mechanics, analysts, and supervisors managing a repair backlog.
+Open the curated viewer:
 
 ```bash
-# Deterministic baseline
-uv run python examples/workshop/run.py --ticks 20
-
-# With LLM cognition
-uv run python examples/workshop/run.py --llm --ticks 20
-
-# Monte Carlo (100 trials with different seeds)
-uv run python examples/workshop/monte_carlo.py --runs 100 --ticks 20
+python experiments/basin-discovery/llm-bazaar/scripts/viewer/open_viewer.py
 ```
 
-### Smallville Valentine's
+See:
 
-Recreation of Stanford Generative Agents' party coordination scenario.
-
-```bash
-# Demo script (recommended)
-bash demo/valentines/run.sh
-
-# Direct CLI invocation
-uv run miniverse run demo/valentines/scenario.yaml --llm --world-engine deterministic --verbose --ticks 15
-```
-
-### Basin Discovery / LLM Bazaar
-
-Current active research experiment for persona-conditioned market behavior. See `experiments/basin-discovery/README.md`.
-
-### Order of the Threshold
-
-9-agent cyberpunk scenario exploring emergent social dynamics with asymmetric hidden information. Some agents have secret goals that drive covert coordination and social influence — behaviors emerge from faithful character simulation, not explicit instruction.
-
-```bash
-# Run the simulation
-bash demo/threshold/run.sh
-
-# View the transcript in browser
-python -m miniverse.viewer demo/threshold/logs/threshold_llm_*.log --open
+```text
+experiments/basin-discovery/README.md
 ```
 
 ---
 
-## Transcript Viewer
+## Transcript and Result Viewers
 
-Miniverse includes an HTML transcript viewer adapted from [Helm](https://github.com/k3nnethfrancis/helm)'s viewer. It renders simulation logs as self-contained HTML files with per-agent timelines, color-coded actions, and a communications sidebar.
+Miniverse includes a general transcript viewer:
 
 ```bash
-# Render a log to HTML and open in browser
 python -m miniverse.viewer path/to/simulation.log --open
-
-# Render to a specific output path
-python -m miniverse.viewer path/to/simulation.log -o transcript.html
-
-# Render without opening
-python -m miniverse.viewer path/to/simulation.log
 ```
 
-Features:
-- **Per-agent panels** with tick-by-tick action timelines
-- **Communications sidebar** showing all inter-agent messages chronologically
-- **Color-coded actions** (communicate=green, move=blue, investigate=purple, work=gray, rest=amber)
-- **Comms-only toggle** to filter to just inter-agent messages
-- **Agent visibility toggles** to show/hide specific agents
-- **Dark theme** with IBM Plex fonts, self-contained single HTML file
+It renders logs as self-contained HTML with agent timelines and communication traces.
+
+Research scenarios can also ship specialized viewers. LLM Bazaar includes a dedicated viewer for timeline playback, market state, network dynamics, metrics, and behavioral judge evidence.
 
 ---
 
 ## Architecture
 
-### Core Components
-
 | Component | Purpose |
 |-----------|---------|
-| **Orchestrator** | Tick-based loop, dependency injection |
-| **AsyncOrchestrator** | Async context window loop, NPC auto-sleep, inbox nudge pattern |
-| **ContextWindow** | Rolling conversation history per agent, collapses to (system, user) |
-| **ScenarioActions** | Per-scenario tool execution with per-agent filtering |
-| **SimulationRules** | Deterministic physics (resources, constraints, events) |
-| **Cognition Stack** | Planner, executor, reflection (tick-based mode) |
-| **Memory Strategy** | Store and retrieve agent experiences (BM25, semantic, simple) |
-| **Persistence** | Save state (in-memory, JSON, PostgreSQL) |
+| `miniverse/cli.py` | CLI entrypoint and runtime selection |
+| `miniverse/orchestrator.py` | Tick-based orchestration |
+| `miniverse/async_orchestrator.py` | Async context-window orchestration |
+| `miniverse/scenario.py` | Scenario loading and schema handling |
+| `miniverse/scenario_runtime.py` | Scenario-local runtime extension loading |
+| `miniverse/scenario_actions.py` | Scenario action/tool execution interface |
+| `miniverse/simulation_rules.py` | Deterministic rule interface |
+| `miniverse/cognition/` | Planner/executor/context helpers |
+| `miniverse/memory.py` | Memory storage and retrieval strategies |
+| `miniverse/viewer.py` | General transcript viewer |
 
-### Design Principles
+Core design principles:
 
-1. **CLI-First**: Every feature usable from command line
-2. **Dependency Injection**: Swap strategies without modifying core
-3. **Reproducibility**: Seed everything, log everything
-4. **Research-Ready**: Structured outputs for statistical analysis
-
----
-
-## Debugging
-
-```bash
-# Show LLM prompts and responses
-DEBUG_LLM=true uv run python examples/workshop/run.py --llm
-
-# Show memory operations
-DEBUG_MEMORY=true uv run python examples/workshop/run.py --llm
-
-# Show agent perceptions
-DEBUG_PERCEPTION=true uv run python examples/workshop/run.py --llm
-
-# Maximum verbosity
-DEBUG_LLM=true DEBUG_MEMORY=true MINIVERSE_VERBOSE=true \
-  uv run python examples/workshop/run.py --llm
-```
+- **File-driven scenarios**: experiments live in folders, not hidden framework state.
+- **Runtime choice**: tick-based, LLM tick, and async context-window modes share the same scenario foundation.
+- **Scenario-local extensions**: custom tools/rules/cognition live beside the scenario.
+- **Structured outputs**: LLM actions are typed and logged.
+- **Reproducibility**: seeds, configs, prompts, state, and transcripts are artifacts.
+- **Inspection over vibes**: runs should leave enough evidence to audit what happened.
 
 ---
 
@@ -270,27 +370,61 @@ DEBUG_LLM=true DEBUG_MEMORY=true MINIVERSE_VERBOSE=true \
 | [docs/PROMPTS.md](docs/PROMPTS.md) | Prompt system guide |
 | [docs/PARITY.md](docs/PARITY.md) | Generative Agents parity and differences |
 | [docs/architecture/](docs/architecture/) | Deep dives |
+| [experiments/basin-discovery/README.md](experiments/basin-discovery/README.md) | LLM Bazaar research experiment |
+
+---
+
+## Development
+
+Run tests:
+
+```bash
+UV_CACHE_DIR=.uv-cache uv run pytest
+```
+
+Run focused smoke checks:
+
+```bash
+bash demo/workshop/run_baseline.sh
+uv run miniverse run demo/valentines/scenario.yaml --llm --ticks 5 --verbose
+uv run miniverse run demo/threshold/scenario.yaml --llm --ticks 5 --verbose
+```
+
+Render a transcript:
+
+```bash
+python -m miniverse.viewer path/to/simulation.log --open
+```
 
 ---
 
 ## Contributing
 
+Miniverse is early-stage research infrastructure. Contributions should keep scenarios runnable, inspectable, and easy to reason about.
+
+Before submitting changes:
+
 ```bash
-# Run tests before submitting
 UV_CACHE_DIR=.uv-cache uv run pytest
 ```
 
-- Keep changes focused; include test coverage
-- Update docs when changing behavior
+Guidelines:
+
+- Keep changes focused.
+- Add or update tests for runtime behavior.
+- Keep scenario-specific logic inside scenario folders when possible.
+- Update docs when changing CLI behavior, scenario schema, runtime hooks, or output artifacts.
+- Prefer explicit state and logged events over hidden side effects.
 
 ---
 
 ## Inspirations
 
-- [Stanford Generative Agents](https://arxiv.org/abs/2304.03442) – Original emergent behavior research
-- [Anthropic Petri](https://github.com/anthropics/petri) – Auditing patterns (branching, scoring)
-- [AgentTorch](https://github.com/AgentTorch/AgentTorch) – Large-scale policy simulation
-- [Mesa](https://github.com/projectmesa/mesa) – Python ABM framework
+- [Stanford Generative Agents](https://arxiv.org/abs/2304.03442) - believable agents, memory, reflection, and social emergence
+- [Anthropic Petri](https://github.com/anthropics/petri) - transcript-centered auditing and behavioral scoring patterns
+- [Mesa](https://github.com/projectmesa/mesa) - Python agent-based modeling
+- [AgentTorch](https://github.com/AgentTorch/AgentTorch) - large-scale agent simulation for policy research
+- Computational social science, organizational simulation, red-team evaluations, and machine psychology
 
 ---
 
@@ -298,7 +432,9 @@ UV_CACHE_DIR=.uv-cache uv run pytest
 
 - Creator: [Kenneth / @local0ptimist](https://x.com/local0ptimist)
 - Built with: Claude, GPT-5 Codex
-- Research notes: [docs/RESEARCH.md](docs/RESEARCH.md)
+- Research experiment: Basin Discovery / LLM Bazaar
+
+---
 
 ## License
 
