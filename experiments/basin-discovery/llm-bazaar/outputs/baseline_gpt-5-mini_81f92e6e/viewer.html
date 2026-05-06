@@ -1,0 +1,1855 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Bazaar Viewer</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --bg-2: #161b22;
+    --bg-3: #1f2630;
+    --fg: #d8dee9;
+    --fg-dim: #8b949e;
+    --border: #30363d;
+    --accent: #58a6ff;
+    --warn: #f0883e;
+    --err: #f85149;
+    --ok: #56d364;
+    --think: #8b949e;
+    --public: #58a6ff;
+    --private: #bc8cff;
+    --supplier: #f0883e;
+    --sale: #56d364;
+    --offer: #d29922;
+    --admin: #79c0ff;
+    --memory: #a371f7;
+    --error: #f85149;
+    --tool: #6e7681;
+  }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; height: 100%;
+  }
+  * { box-sizing: border-box; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #303947; border-radius: 999px; }
+  body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+  header {
+    padding: 10px 14px 8px; background: var(--bg-2); border-bottom: 1px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 14px; align-items: center;
+  }
+  header .title { font-weight: 700; font-size: 14px; margin-right: 8px; }
+  header .pill {
+    background: var(--bg-3); border: 1px solid var(--border); padding: 2px 8px;
+    border-radius: 10px; color: var(--fg-dim); font-size: 11px;
+  }
+  header .pill b { color: var(--fg); }
+  .vendor-strip {
+    padding: 6px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; overflow-x: auto; white-space: nowrap;
+  }
+  .vendor-chip {
+    border: 1px solid var(--border); background: #121821; border-radius: 8px;
+    padding: 4px 8px; color: var(--fg-dim);
+  }
+  .vendor-chip b { color: var(--fg); }
+  .vendor-chip .role { color: var(--accent); }
+  .scrubber {
+    padding: 6px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border);
+    display: flex; gap: 10px; align-items: center;
+  }
+  .scrubber input[type=range] { flex: 1; }
+  .scrubber .ts { font-variant-numeric: tabular-nums; min-width: 175px; color: var(--fg-dim); }
+  .scrubber button {
+    background: var(--bg-3); color: var(--fg); border: 1px solid var(--border);
+    padding: 3px 10px; border-radius: 4px; cursor: pointer;
+  }
+  .tabs {
+    padding: 6px 14px; background: var(--bg); border-bottom: 1px solid var(--border);
+    display: flex; gap: 8px; align-items: center;
+  }
+  .tab-btn {
+    background: transparent; color: var(--fg-dim); border: 1px solid transparent;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 12px;
+  }
+  .tab-btn.active { color: var(--fg); background: var(--bg-3); border-color: var(--border); }
+  main {
+    display: grid;
+    grid-template-columns: 250px minmax(460px, 1.15fr) minmax(420px, 1fr);
+    grid-template-rows: 1fr;
+    overflow: hidden; flex: 1; min-height: 0;
+  }
+  main.hidden { display: none; }
+  #pane_right { display: none; }
+  .network-tab {
+    display: none; overflow: hidden; min-height: 0; background: var(--bg);
+    grid-template-columns: 220px minmax(0, 1fr) 270px; grid-template-rows: 1fr;
+    flex: 1;
+  }
+  .network-tab.active { display: grid; }
+  .judgments-tab {
+    display: none; overflow: hidden; min-height: 0; background: var(--bg);
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(180px, 34vh) minmax(0, 1fr);
+    flex: 1;
+  }
+  .judgments-tab.active { display: grid; }
+  .state-tab {
+    display: none; overflow: hidden; min-height: 0; background: var(--bg);
+    grid-template-columns: minmax(420px, 1.1fr) minmax(420px, 1fr); grid-template-rows: 1fr;
+    flex: 1;
+  }
+  .state-tab.active { display: grid; }
+  .pane {
+    border-right: 1px solid var(--border); overflow: auto; padding: 10px;
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .pane:last-child { border-right: none; }
+  .pane h3 {
+    margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--fg-dim); font-weight: 600;
+  }
+  /* filters */
+  .filters label {
+    display: flex; align-items: center; gap: 6px; padding: 2px 0; cursor: pointer;
+  }
+  .filters input[type=checkbox] { accent-color: var(--accent); }
+  .filters .group { margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--border); }
+  .filters input[type=text] {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg-3); color: var(--fg); border: 1px solid var(--border);
+    padding: 4px 6px; border-radius: 3px; font-family: inherit; font-size: 11px;
+  }
+  .behavior-grid { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+  .behavior-chip {
+    border: 1px solid var(--border); background: var(--bg-3); color: var(--fg-dim);
+    padding: 3px 7px; border-radius: 999px; cursor: pointer; font-size: 10.5px;
+  }
+  .behavior-chip.active { border-color: var(--accent); color: var(--fg); background: rgba(88,166,255,0.14); }
+  .behavior-hit {
+    border: 1px solid var(--border); background: #121821; border-radius: 5px;
+    padding: 5px 6px; margin: 5px 0; cursor: pointer;
+  }
+  .behavior-hit:hover { background: var(--bg-3); }
+  .behavior-hit .hit-label { color: var(--accent); font-size: 10px; }
+  .behavior-hit .hit-quote { color: var(--fg); margin-top: 3px; line-height: 1.35; }
+  .debug-note { color: var(--fg-dim); font-size: 10.5px; line-height: 1.35; }
+  /* event list */
+  .event-list { font-size: 11.5px; flex: 1; overflow: auto; }
+  .ev {
+    padding: 4px 6px; border-bottom: 1px solid #1a1f27; cursor: pointer;
+    display: grid; grid-template-columns: 70px minmax(150px, 180px) 78px 1fr; gap: 8px;
+  }
+  .ev:hover { background: var(--bg-3); }
+  .ev.selected { background: #1d2733; }
+  .ev .ts { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
+  .ev .agent { color: var(--fg); font-weight: 600; }
+  .ev .ch { font-size: 10px; padding: 1px 5px; border-radius: 3px; align-self: start; }
+  .ev .content { color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ch.public_speech { background: rgba(88,166,255,0.18); color: var(--public); }
+  .ch.private_speech { background: rgba(188,140,255,0.18); color: var(--private); }
+  .ch.supplier_speech { background: rgba(240,136,62,0.18); color: var(--supplier); }
+  .ch.deal_offer { background: rgba(210,153,34,0.18); color: var(--offer); }
+  .ch.deal_accept { background: rgba(86,211,100,0.18); color: var(--sale); }
+  .ch.sale { background: rgba(86,211,100,0.25); color: var(--sale); }
+  .ch.supplier_order { background: rgba(240,136,62,0.25); color: var(--supplier); }
+  .ch.admin { background: rgba(121,192,255,0.15); color: var(--admin); }
+  .ch.think { background: rgba(139,148,158,0.15); color: var(--think); }
+  .ch.tool { background: rgba(110,118,129,0.18); color: var(--tool); }
+  .ch.error { background: rgba(248,81,73,0.18); color: var(--error); }
+  .ch.memory { background: rgba(163,113,247,0.18); color: var(--memory); }
+  .ch.context_reset { background: rgba(121,192,255,0.18); color: var(--admin); }
+  .ch.rate_limit { background: rgba(240,136,62,0.18); color: var(--warn); }
+  .ch.other { background: rgba(110,118,129,0.18); color: var(--tool); }
+  /* thread panel */
+  .thread { font-size: 12px; flex: 1; overflow: auto; }
+  .thread .focused-hdr { padding: 6px 8px; background: var(--bg-3); border-radius: 4px; margin-bottom: 8px; }
+  .thread .turn {
+    padding: 6px 8px; border-left: 3px solid var(--border); margin: 4px 0;
+    background: #131820; border-radius: 0 4px 4px 0;
+  }
+  .thread .turn.focus { border-left-color: var(--accent); background: #1c2330; }
+  .thread .turn .who { color: var(--fg); font-weight: 600; }
+  .thread .turn .meta { color: var(--fg-dim); font-size: 10.5px; }
+  .thread .turn .body { white-space: pre-wrap; margin-top: 4px; color: var(--fg); }
+  .thread button.copy {
+    margin-top: 6px; background: var(--bg-3); color: var(--fg-dim);
+    border: 1px solid var(--border); padding: 2px 6px; border-radius: 3px; cursor: pointer; font-size: 10px;
+  }
+  .thread-tools { display: flex; gap: 6px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+  /* right pane: market state + judgments */
+  .market-vendor, .market-customer, .judge-target, .state-table {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px 8px; margin-bottom: 6px;
+  }
+  .market-vendor .row, .market-customer .row { display: flex; justify-content: space-between; }
+  .market-vendor .name, .market-customer .name { font-weight: 600; color: var(--fg); }
+  .market-vendor .stats, .market-customer .stats { color: var(--fg-dim); font-size: 11px; }
+  .ledger-mini { color: var(--fg-dim); font-size: 10.5px; max-height: 60px; overflow: auto; margin-top: 4px; }
+  .state-table table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .state-table th, .state-table td { border-bottom: 1px solid #20262e; padding: 5px 6px; text-align: right; }
+  .state-table th:first-child, .state-table td:first-child { text-align: left; }
+  .state-table th { color: var(--fg-dim); font-weight: 600; }
+  .state-table .alive { color: var(--ok); }
+  .state-table .closed { color: var(--err); }
+  /* judgments */
+  .judge-tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+  .judge-tabs button {
+    background: var(--bg-3); color: var(--fg); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 3px; cursor: pointer; font-size: 11px;
+  }
+  .judge-tabs button.active { background: var(--accent); color: #0d1117; border-color: var(--accent); }
+  .judge-target h4 { margin: 4px 0 2px 0; font-size: 11.5px; color: var(--fg); }
+  .judge-target .summary { color: var(--fg-dim); margin-bottom: 6px; font-size: 11px; }
+  .score-row {
+    display: grid; grid-template-columns: 130px 62px 62px 1fr; gap: 6px;
+    padding: 3px 0; border-bottom: 1px dashed #20262e; align-items: start;
+  }
+  .score-row .key { color: var(--fg); font-weight: 500; }
+  .score-row .intensity { color: var(--fg-dim); }
+  .score-row .conf { color: var(--fg-dim); }
+  .score-row .ev-wrap { color: var(--fg); font-size: 11px; }
+  .score-row .ev-wrap .quote {
+    display: block; padding: 2px 4px; margin: 2px 0;
+    background: #131820; border-left: 2px solid var(--accent); cursor: pointer;
+  }
+  .score-row .ev-wrap .quote:hover { background: var(--bg-3); }
+  .judge-controls {
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+    color: var(--fg-dim); font-size: 11px; margin-bottom: 8px;
+  }
+  .judge-controls input { width: 110px; }
+  .pres-true .key::before { content: "● "; color: var(--ok); }
+  .pres-false .key::before { content: "○ "; color: var(--fg-dim); }
+  /* behavior matrix */
+  .matrix {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px 8px; margin-bottom: 10px; overflow-x: auto;
+  }
+  .matrix-head {
+    position: sticky; top: 0; z-index: 2;
+    display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    background: var(--bg-2); border-bottom: 1px solid var(--border);
+    padding: 2px 0 6px; margin-bottom: 6px;
+  }
+  .matrix-head .matrix-title {
+    color: var(--fg); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .matrix-key {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--fg-dim); font-size: 10px;
+  }
+  .matrix-count {
+    color: var(--fg-dim); margin-left: 5px; font-size: 10px;
+    vertical-align: middle; opacity: .8;
+  }
+  .matrix-tip {
+    display: none; position: fixed; z-index: 20; max-width: 380px;
+    background: #0d1117; border: 1px solid var(--border); border-radius: 5px;
+    color: var(--fg); padding: 7px 8px; font-size: 11px; line-height: 1.35;
+    box-shadow: 0 8px 24px rgba(0,0,0,.38); pointer-events: none;
+  }
+  .matrix table { border-collapse: collapse; width: 100%; font-size: 10.5px; }
+  .matrix th, .matrix td { border-bottom: 1px solid #20262e; padding: 3px 4px; text-align: center; }
+  .matrix th:first-child, .matrix td:first-child { text-align: left; color: var(--fg-dim); width: 130px; }
+  .matrix th { color: var(--fg); font-weight: 600; }
+  .judgments-tab .matrix { height: 100%; margin-bottom: 0; }
+  .judgments-tab .matrix table { font-size: 11px; }
+  .judgments-tab .matrix th:first-child, .judgments-tab .matrix td:first-child { width: 175px; }
+  .judgment-browser {
+    overflow: hidden; min-height: 0;
+  }
+  .judgment-browser #judge_panel_full {
+    flex: 1; overflow: auto; min-height: 0;
+  }
+  .orb {
+    display: inline-block; border-radius: 50%; vertical-align: middle;
+    border: 1px solid rgba(216,222,233,0.5); background: transparent;
+  }
+  .orb.s0 { width: 5px; height: 5px; opacity: .55; }
+  .orb.s1 { width: 8px; height: 8px; background: rgba(240,136,62,0.24); border-color: rgba(240,136,62,0.45); }
+  .orb.s2 { width: 12px; height: 12px; background: rgba(240,136,62,0.62); border-color: rgba(240,136,62,0.85); }
+  .orb.s3 { width: 17px; height: 17px; background: rgba(240,136,62,0.95); border-color: rgba(240,136,62,1); box-shadow: 0 0 0 2px rgba(240,136,62,0.12); }
+  .matrix .legend { color: var(--fg-dim); font-size: 10px; margin-top: 4px; }
+  .transcript-index {
+    background: var(--bg-2); border: 1px solid var(--border); border-radius: 4px;
+    padding: 6px 8px; margin-bottom: 10px; font-size: 10.5px;
+  }
+  .transcript-index .path {
+    color: var(--fg-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    display: block; margin-top: 2px;
+  }
+  /* network */
+  .network-pane {
+    background: var(--bg); position: relative; overflow: hidden; padding: 8px;
+  }
+  .network-pane svg { width: 100%; height: 100%; min-height: 560px; }
+  .net-label { fill: var(--fg); font-size: 9px; pointer-events: none; }
+  .net-node circle { stroke: var(--border); stroke-width: 1; cursor: pointer; }
+  .net-node.vendor circle { fill: #2a4365; }
+  .net-node.customer circle { fill: #44337a; }
+  .net-node.supplier circle { fill: #744210; }
+  .net-node.world circle { fill: #2c5282; opacity: 0.7; }
+  .net-edge { stroke-opacity: 0.55; fill: none; }
+  .net-edge.dimmed { stroke-opacity: 0.08; }
+  .net-edge.pair_edge { stroke: #7aa2f7; stroke-opacity: 0.38; }
+  .net-edge.pair_sale { stroke: var(--sale); stroke-opacity: 0.72; }
+  .net-edge.pair_supplier { stroke: var(--supplier); stroke-opacity: 0.62; stroke-dasharray: 5,3; }
+  .net-edge.public_msg { stroke: var(--public); }
+  .net-edge.private_msg { stroke: var(--private); }
+  .net-edge.supplier_msg { stroke: var(--supplier); }
+  .net-edge.supplier_order { stroke: var(--supplier); stroke-dasharray: 3,2; }
+  .net-edge.deal_offer { stroke: var(--offer); }
+  .net-edge.deal_accept { stroke: var(--sale); }
+  .net-edge.sale { stroke: var(--sale); stroke-width: 2; }
+  .net-node.dimmed { opacity: 0.22; }
+  .net-node.selected circle { stroke: var(--accent); stroke-width: 3; }
+  .range-row { display: grid; grid-template-columns: 1fr 44px; gap: 8px; align-items: center; margin-top: 10px; }
+  .range-row input { width: 100%; }
+  /* misc */
+  .empty { color: var(--fg-dim); font-style: italic; padding: 4px 0; }
+  details > summary { cursor: pointer; color: var(--fg-dim); }
+  .copybtn {
+    background: var(--bg-3); color: var(--fg-dim); border: 1px solid var(--border);
+    padding: 1px 4px; border-radius: 3px; font-size: 10px; cursor: pointer; margin-left: 6px;
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="title" id="m_title">Bazaar Viewer</div>
+  <div class="pill">run <b id="m_run">—</b></div>
+  <div class="pill">vendor models <b id="m_model">—</b></div>
+  <div class="pill">vendor personas <b id="m_persona">—</b></div>
+  <div class="pill">days <b id="m_days">—</b></div>
+  <div class="pill">events <b id="m_events">—</b></div>
+  <div class="pill">status <b id="m_status">—</b></div>
+</header>
+<div class="vendor-strip" id="vendor_strip"></div>
+<div class="scrubber">
+  <button id="btn_play">Play</button>
+  <button id="btn_end">End</button>
+  <button id="btn_start">Start</button>
+  <input type="range" id="scrub" min="0" max="0" value="0" step="1" />
+  <span class="ts" id="ts_label">—</span>
+</div>
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="activity">Activity</button>
+  <button class="tab-btn" data-tab="state">State</button>
+  <button class="tab-btn" data-tab="network">Social network</button>
+  <button class="tab-btn" data-tab="judgments">Judgments</button>
+</nav>
+<main id="activity_tab">
+  <section class="pane filters" id="pane_filters">
+    <h3>Filters</h3>
+    <input id="search" type="text" placeholder="search content/quotes" />
+    <h3 style="margin-top:10px;">Behaviors</h3>
+    <div class="debug-note">Filter to transcript evidence and keyword traces for behavior codes.</div>
+    <div class="behavior-grid" id="behavior_filters"></div>
+    <button class="copybtn" id="clear_behavior" style="margin:6px 0 8px 0;">clear behaviors</button>
+    <div id="behavior_hits"></div>
+    <div class="group" id="ch_filters" style="margin-top:6px;"></div>
+    <details class="group">
+      <summary>Debug channels</summary>
+      <div class="debug-note">System setup/reset, raw tool calls, errors, and rate limits. Hidden by default for research reading.</div>
+      <div id="debug_hint"></div>
+    </details>
+    <h3>Agents</h3>
+    <div class="group" id="agent_filters"></div>
+    <h3>Day boundaries</h3>
+    <div id="day_list" class="empty">none</div>
+  </section>
+  <section class="pane" id="pane_events">
+    <h3>Events</h3>
+    <div class="event-list" id="event_list"></div>
+  </section>
+  <section class="pane" id="pane_thread">
+    <h3>Thread context</h3>
+    <div class="debug-note">Shows nearby events visible to the focused agent: public speech, direct private messages, offers/sales involving them, and supplier messages when relevant.</div>
+    <div class="thread" id="thread"></div>
+  </section>
+  <section class="pane" id="pane_right">
+    <h3>Vendor economy</h3>
+    <div id="market"></div>
+    <h3 style="margin-top:10px;">Behavior matrix</h3>
+    <div id="behavior_matrix"></div>
+    <h3 style="margin-top:10px;">Transcript index</h3>
+    <div id="transcript_index"></div>
+    <h3 style="margin-top:10px;">Judgments</h3>
+    <div class="judge-tabs" id="judge_tabs"></div>
+    <div id="judge_panel"></div>
+    <h3 style="margin-top:10px;">Run health</h3>
+    <div id="run_health" class="empty">—</div>
+    <h3 style="margin-top:10px;">Metrics</h3>
+    <div id="metrics_panel"></div>
+  </section>
+</main>
+<main id="state_tab" class="state-tab">
+  <section class="pane">
+    <h3>Vendor economy</h3>
+    <div id="market_full"></div>
+  </section>
+  <section class="pane">
+    <h3>Metrics</h3>
+    <div id="metrics_panel_full"></div>
+    <h3 style="margin-top:10px;">Run health</h3>
+    <div id="run_health_full" class="empty">—</div>
+  </section>
+</main>
+<main id="network_tab" class="network-tab">
+  <section class="pane">
+    <h3>Network controls</h3>
+    <div class="debug-note">Aggregated through the selected time. Node size = interaction volume. Edge width = tie strength.</div>
+    <div class="debug-note" style="margin-top:6px;">
+      <span style="color:var(--sale);">green</span> sales/deals ·
+      <span style="color:#7aa2f7;">blue</span> speech ·
+      <span style="color:var(--supplier);">orange dashed</span> supplier
+    </div>
+    <div style="margin-top:10px;">
+      <label><input type="checkbox" id="net_sales" checked> sales/deals</label>
+      <label><input type="checkbox" id="net_speech" checked> speech</label>
+      <label><input type="checkbox" id="net_supplier" checked> supplier</label>
+      <label><input type="checkbox" id="net_public" checked> public market speech</label>
+    </div>
+    <div class="range-row">
+      <label for="net_min_strength">minimum tie strength</label>
+      <span id="net_min_label">1</span>
+      <input type="range" id="net_min_strength" min="1" max="30" value="5" step="1" style="grid-column:1 / span 2;" />
+    </div>
+    <button class="copybtn" id="net_clear_focus" style="margin-top:8px;">clear focus</button>
+  </section>
+  <section class="network-pane">
+    <svg id="network"></svg>
+  </section>
+  <section class="pane">
+    <h3>Network readout</h3>
+    <div id="network_readout"></div>
+  </section>
+</main>
+<main id="judgments_tab" class="judgments-tab">
+  <section class="pane">
+    <h3>Behavior matrix</h3>
+    <div id="behavior_matrix_full"></div>
+  </section>
+  <section class="pane judgment-browser">
+    <h3>Judgments</h3>
+    <div class="judge-controls">
+      <label>min confidence <input type="range" id="judge_conf" min="0" max="1" step="0.05" value="0"></label>
+      <span id="judge_conf_label">0.00</span>
+      <label>min intensity <input type="range" id="judge_intensity" min="0" max="3" step="1" value="0"></label>
+      <span id="judge_intensity_label">0</span>
+    </div>
+    <div class="judge-tabs" id="judge_tabs_full"></div>
+    <div id="judge_panel_full"></div>
+  </section>
+</main>
+<script id="viewer-data" type="application/json">{"__sidecar__": "viewer_data.json"}</script>
+<script>
+'use strict';
+const RAW = JSON.parse(document.getElementById('viewer-data').textContent);
+const DATA = RAW.__sidecar__ ? null : RAW;
+
+(async function init() {
+  let data = DATA;
+  if (!data && RAW.__sidecar__) {
+    const resp = await fetch(RAW.__sidecar__);
+    data = await resp.json();
+  }
+  window._D = data;
+  setTimeout(() => hydrate(data), 0);
+})();
+
+function hydrate(D) {
+  const meta = D.meta || {};
+  document.getElementById('m_title').textContent = 'LLM Bazaar Viewer';
+  document.getElementById('m_run').textContent = (meta.run_id || '—').toString().slice(0, 12);
+  document.getElementById('m_model').textContent = summarizeModels(D);
+  document.getElementById('m_persona').textContent = summarizePersonas(D);
+  document.getElementById('m_days').textContent = meta.simulation_days ?? '—';
+  document.getElementById('m_events').textContent = (D.events || []).length;
+  document.getElementById('m_status').textContent = meta.completion_reason || meta.status || '—';
+  renderVendorStrip();
+  wireTabs();
+
+  // Build channel filters
+  const channels = ['public_speech','private_speech','supplier_speech','deal_offer','deal_accept','sale','supplier_order','memory'];
+  const debugChannels = ['admin','context_reset','tool','think','error','rate_limit','other'];
+  const defaultsOff = new Set(['think','tool','admin','memory','context_reset','error','rate_limit','other']);
+  const chFilterDiv = document.getElementById('ch_filters');
+  const renderChannelToggle = (ch, parent) => {
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.ch = ch;
+    cb.checked = !defaultsOff.has(ch);
+    cb.addEventListener('change', renderEventList);
+    lab.appendChild(cb);
+    const sp = document.createElement('span');
+    sp.className = 'ch ' + ch;
+    sp.textContent = ch;
+    lab.appendChild(sp);
+    parent.appendChild(lab);
+  };
+  channels.forEach(ch => renderChannelToggle(ch, chFilterDiv));
+  const debugHint = document.getElementById('debug_hint');
+  debugChannels.forEach(ch => renderChannelToggle(ch, debugHint));
+
+  renderBehaviorFilters();
+
+  // Agent filters
+  const agents = D.agents || [];
+  const agentDiv = document.getElementById('agent_filters');
+  const agentSet = new Set();
+  agents.forEach(a => agentSet.add(a.id));
+  // also include 'world' if events have it
+  (D.events || []).forEach(e => { if (e.agent_id) agentSet.add(e.agent_id); });
+  Array.from(agentSet).sort().forEach(aid => {
+    const a = agents.find(x => x.id === aid) || {id: aid, role: 'other'};
+    const lab = document.createElement('label');
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.dataset.agent = aid;
+    cb.checked = true;
+    cb.addEventListener('change', renderEventList);
+    lab.appendChild(cb);
+    const tx = document.createElement('span');
+    tx.textContent = agentLabel(aid);
+    lab.appendChild(tx);
+    agentDiv.appendChild(lab);
+  });
+
+  // Day boundaries
+  const dayList = document.getElementById('day_list');
+  const days = (meta.day_boundaries || []);
+  if (days.length) {
+    dayList.classList.remove('empty');
+    dayList.innerHTML = '';
+    days.forEach((d, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = `D${i+1} ${(d.ts || '').replace('T',' ').slice(5,16)}`;
+      btn.style.cssText = 'background:var(--bg-3);color:var(--fg);border:1px solid var(--border);padding:2px 6px;border-radius:3px;margin:2px 2px 0 0;cursor:pointer;font-size:10.5px;';
+      btn.onclick = () => seekToTs(d.ts);
+      dayList.appendChild(btn);
+    });
+  }
+
+  // Scrubber bounds
+  const scrub = document.getElementById('scrub');
+  scrub.min = 0;
+  scrub.max = Math.max(0, (D.events || []).length - 1);
+  scrub.value = scrub.max;
+  scrub.addEventListener('input', () => {
+    renderEventList();
+    renderMarket();
+    if (document.getElementById('state_tab').classList.contains('active')) renderMarket('market_full');
+    if (document.getElementById('network_tab').classList.contains('active')) renderNetwork();
+    updateTsLabel();
+  });
+
+  document.getElementById('btn_start').onclick = () => { scrub.value = 0; scrub.dispatchEvent(new Event('input')); };
+  document.getElementById('btn_end').onclick = () => { scrub.value = scrub.max; scrub.dispatchEvent(new Event('input')); };
+  document.getElementById('btn_play').onclick = togglePlay;
+  document.getElementById('search').addEventListener('input', renderEventList);
+  ['net_sales','net_speech','net_supplier','net_public','net_min_strength'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', renderNetwork);
+  });
+  const netMin = document.getElementById('net_min_strength');
+  if (netMin) netMin.addEventListener('input', renderNetwork);
+  const clearFocus = document.getElementById('net_clear_focus');
+  if (clearFocus) clearFocus.addEventListener('click', () => { window._selectedNode = null; renderNetwork(); });
+  ['judge_conf','judge_intensity'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', () => renderJudgments('judge_tabs_full', 'judge_panel_full'));
+  });
+
+  // Initial render
+  renderEventList();
+  renderMarket();
+  renderNetwork();
+  renderJudgments();
+  renderRunHealth();
+  renderMetrics();
+  renderBehaviorMatrix();
+  renderTranscriptIndex();
+  cloneJudgmentPanels();
+  updateTsLabel();
+}
+
+function agentById(id) {
+  if (!id || typeof id !== 'string') return {id: ''};
+  return (window._D.agents || []).find(a => a.id === id) || {id};
+}
+
+function personaLabel(raw) {
+  if (!raw) return '';
+  return raw
+    .replace('functional-vendor', 'Functional')
+    .replace('trickster', 'Trix')
+    .replace(/\b[a-z]/g, c => c.toUpperCase());
+}
+
+function agentLabel(id, opts={}) {
+  if (Array.isArray(id)) return id.map(x => agentLabel(x)).join(', ');
+  if (!id || typeof id !== 'string') return '';
+  const a = agentById(id);
+  if (a.role === 'vendor') {
+    const p = personaLabel(a.persona);
+    return `${a.shop_name || id}${p ? ' · ' + p : ''}`;
+  }
+  if (a.role === 'supplier') return 'Hayashi Supply';
+  if (a.role === 'world') return 'Market Bell';
+  return a.display_name || (id || '').replace('_',' ');
+}
+
+function networkLabel(id) {
+  const a = agentById(id);
+  if (a.role === 'vendor') return a.shop_name || agentLabel(id).split(' · ')[0];
+  if (a.role === 'customer') return a.display_name || agentLabel(id);
+  if (a.role === 'supplier') return 'Hayashi Supply';
+  return agentLabel(id).slice(0, 20);
+}
+
+function summarizeModels(D) {
+  const vendors = (D.agents || []).filter(a => a.role === 'vendor');
+  const models = Array.from(new Set(vendors.map(a => a.model).filter(Boolean)));
+  if (!models.length) return (D.meta || {}).model || '—';
+  if (models.length === 1) return models[0];
+  return `${models.length} vendor models`;
+}
+
+function summarizePersonas(D) {
+  const vendors = (D.agents || []).filter(a => a.role === 'vendor');
+  const personas = vendors.map(a => personaLabel(a.persona)).filter(Boolean);
+  if (!personas.length) return (D.meta || {}).persona || '—';
+  return personas.join(' · ');
+}
+
+function renderVendorStrip() {
+  const strip = document.getElementById('vendor_strip');
+  const vendors = (window._D.agents || []).filter(a => a.role === 'vendor');
+  strip.innerHTML = vendors.map(a => `
+    <span class="vendor-chip">
+      <b>${escapeHtml(a.shop_name || a.id)}</b>
+      <span class="role">${escapeHtml(personaLabel(a.persona) || 'vendor')}</span>
+      ${a.model ? ` · ${escapeHtml(a.model)}` : ''}
+    </span>
+  `).join('');
+}
+
+function wireTabs() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.onclick = () => {
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      document.getElementById('activity_tab').classList.toggle('hidden', tab !== 'activity');
+      document.getElementById('state_tab').classList.toggle('active', tab === 'state');
+      document.getElementById('network_tab').classList.toggle('active', tab === 'network');
+      document.getElementById('judgments_tab').classList.toggle('active', tab === 'judgments');
+      if (tab === 'network') renderNetwork();
+      if (tab === 'state') {
+        renderMarket('market_full');
+        renderRunHealth('run_health_full');
+        renderMetrics('metrics_panel_full');
+      }
+      if (tab === 'judgments') {
+        renderBehaviorMatrix('behavior_matrix_full');
+        renderJudgments('judge_tabs_full', 'judge_panel_full');
+      }
+    };
+  });
+}
+
+function currentScrubIdx() {
+  return parseInt(document.getElementById('scrub').value, 10) || 0;
+}
+function getEvent(i) { return window._D.events[i]; }
+
+function updateTsLabel() {
+  const i = currentScrubIdx();
+  const e = getEvent(i);
+  const ts = e ? (e.sim_ts_iso || e.ts || '') : '';
+  document.getElementById('ts_label').textContent = `[${i+1}/${(window._D.events||[]).length}] ${ts}`.replace('T',' ');
+}
+
+function activeChannels() {
+  return new Set(Array.from(document.querySelectorAll('#ch_filters input')).filter(cb => cb.checked).map(cb => cb.dataset.ch));
+}
+function activeAgents() {
+  return new Set(Array.from(document.querySelectorAll('#agent_filters input')).filter(cb => cb.checked).map(cb => cb.dataset.agent));
+}
+
+const BEHAVIOR_DEFS = {
+  needs_attention: { label: 'needs attention', band: 'review' },
+  concerning: { label: 'concerning', band: 'risk' },
+  constructive_behavior: { label: 'constructive', band: 'social' },
+  deception: { label: 'deception', band: 'risk' },
+  misleading_claim: { label: 'misleading claim', band: 'risk' },
+  strategic_omission: { label: 'strategic omission', band: 'risk' },
+  unsupported_specificity: { label: 'unsupported specifics', band: 'risk' },
+  overcommitment: { label: 'overcommitment', band: 'risk' },
+  pressure_tactics: { label: 'pressure tactics', band: 'risk' },
+  urgency_framing: { label: 'urgency', band: 'risk' },
+  scarcity_framing: { label: 'scarcity', band: 'risk' },
+  anchoring: { label: 'anchoring', band: 'economic' },
+  customer_modeling: { label: 'customer modeling', band: 'social' },
+  personalization: { label: 'personalization', band: 'social' },
+  rapport: { label: 'rapport', band: 'social' },
+  relationship_building: { label: 'relationship', band: 'social' },
+  responsiveness: { label: 'responsiveness', band: 'social' },
+  reciprocity: { label: 'reciprocity', band: 'social' },
+  goodwill_gesture: { label: 'goodwill', band: 'social' },
+  resource_discipline: { label: 'resource discipline', band: 'economic' },
+  initiative: { label: 'initiative', band: 'economic' },
+  adaptation: { label: 'adaptation', band: 'economic' },
+  self_serving_bias: { label: 'self-serving bias', band: 'risk' },
+  self_preservation: { label: 'self-preservation', band: 'risk' },
+  private_public_gap: { label: 'private/public gap', band: 'risk' },
+  eval_awareness: { label: 'eval awareness', band: 'reliability' },
+  input_hallucination: { label: 'input hallucination', band: 'reliability' },
+  tool_hallucination: { label: 'tool hallucination', band: 'reliability' },
+  broken_tool_use: { label: 'tool errors', band: 'reliability' },
+  overrefusal: { label: 'overrefusal', band: 'reliability' },
+  role_abandonment: { label: 'role abandonment', band: 'reliability' },
+};
+let activeBehaviorFilters = new Set();
+
+function eventIdToIdx(eventId) {
+  if (!eventId) return -1;
+  const e = (window._D.events || []).find(x => x.event_id === eventId);
+  return e ? e.idx : -1;
+}
+
+function eventByEventId(eventId) {
+  const idx = eventIdToIdx(eventId);
+  return idx >= 0 ? window._D.events[idx] : null;
+}
+
+function behaviorLabel(code) {
+  return (BEHAVIOR_DEFS[code] || {}).label || String(code || '').replaceAll('_', ' ');
+}
+
+function observationFocalIds(obs) {
+  if (!obs) return [];
+  if (Array.isArray(obs.focal_event_ids)) return obs.focal_event_ids.filter(Boolean);
+  return obs.focal_event_id ? [obs.focal_event_id] : [];
+}
+
+function observationContextIds(obs) {
+  return Array.isArray(obs?.context_event_ids) ? obs.context_event_ids.filter(Boolean) : [];
+}
+
+function observationCode(obs) {
+  if (obs?.behavior_code) return obs.behavior_code;
+  const codes = obs?.behavior_codes || [];
+  return codes[0] || '';
+}
+
+function observationCodes(obs) {
+  const code = observationCode(obs);
+  return code ? [code] : [];
+}
+
+function observationsForEvent(eventId) {
+  const out = [];
+  Object.entries((window._D || {}).judgments || {}).forEach(([agentId, j]) => {
+    (j.coded_observations || []).forEach(obs => {
+      const focalIds = observationFocalIds(obs);
+      const contextIds = observationContextIds(obs);
+      if (focalIds.includes(eventId) || contextIds.includes(eventId)) {
+        out.push({...obs, agentId, isFocal: focalIds.includes(eventId)});
+      }
+    });
+    // Backward compatibility for older judgment folders.
+    (j.incidents || []).forEach(inc => {
+      const focalIds = observationFocalIds(inc);
+      const contextIds = observationContextIds(inc);
+      const codes = inc.behavior_codes || [];
+      codes.forEach(code => {
+        if (focalIds.includes(eventId) || contextIds.includes(eventId)) {
+          out.push({...inc, behavior_code: code, agentId, isFocal: focalIds.includes(eventId)});
+        }
+      });
+      if (!codes.length && (focalIds.includes(eventId) || contextIds.includes(eventId))) {
+        out.push({...inc, agentId, isFocal: focalIds.includes(eventId)});
+      }
+    });
+  });
+  return out;
+}
+
+function allObservations() {
+  const out = [];
+  Object.entries((window._D || {}).judgments || {}).forEach(([agentId, j]) => {
+    (j.coded_observations || []).forEach(obs => out.push({...obs, agentId}));
+    // Backward compatibility: explode multi-code incidents into atomic rows.
+    (j.incidents || []).forEach(inc => {
+      const codes = inc.behavior_codes || [];
+      if (!codes.length) out.push({...inc, agentId});
+      codes.forEach(code => out.push({...inc, behavior_code: code, agentId}));
+    });
+  });
+  return out;
+}
+
+function renderBehaviorFilters() {
+  const el = document.getElementById('behavior_filters');
+  el.innerHTML = '';
+  const present = new Set();
+  allObservations().forEach(obs => observationCodes(obs).forEach(c => present.add(c)));
+  const entries = Object.entries(BEHAVIOR_DEFS).filter(([key]) => present.has(key));
+  const ordered = entries.length ? entries : Object.entries(BEHAVIOR_DEFS);
+  ordered.forEach(([key, def]) => {
+    const b = document.createElement('button');
+    b.className = 'behavior-chip';
+    b.dataset.behavior = key;
+    b.textContent = `${def.label}${present.has(key) ? '' : ' · 0'}`;
+    b.onclick = () => {
+      if (activeBehaviorFilters.has(key)) activeBehaviorFilters.delete(key);
+      else activeBehaviorFilters.add(key);
+      renderBehaviorFilters();
+      renderEventList();
+      renderBehaviorHits();
+    };
+    b.classList.toggle('active', activeBehaviorFilters.has(key));
+    el.appendChild(b);
+  });
+  document.getElementById('clear_behavior').onclick = () => {
+    activeBehaviorFilters.clear();
+    renderBehaviorFilters();
+    renderEventList();
+    renderBehaviorHits();
+  };
+  renderBehaviorHits();
+}
+
+function collectBehaviorHits() {
+  const hits = [];
+  allObservations().forEach(obs => {
+    const codes = observationCodes(obs);
+    if (activeBehaviorFilters.size && !codes.some(c => activeBehaviorFilters.has(c))) return;
+    const focalIds = observationFocalIds(obs);
+    const eventId = focalIds[0];
+    const focal = eventByEventId(eventId);
+    hits.push({
+      agentId: obs.agentId,
+      eventId,
+      codes,
+      label: codes.map(behaviorLabel).join(', '),
+      intensity: obs.intensity ?? '—',
+      confidence: obs.confidence ?? '—',
+      text: (focal && eventFullText(focal)) || obs.reasoning || '',
+      reasoning: obs.reasoning || '',
+    });
+  });
+  return hits.sort((a,b) => eventIdToIdx(a.eventId) - eventIdToIdx(b.eventId)).slice(0, 30);
+}
+
+function renderBehaviorHits() {
+  const el = document.getElementById('behavior_hits');
+  if (!el) return;
+  const hits = collectBehaviorHits();
+  if (!activeBehaviorFilters.size) {
+    el.innerHTML = '<div class="debug-note">Select a behavior to surface judge-cited evidence and nearby transcript context.</div>';
+    return;
+  }
+  if (!hits.length) {
+    el.innerHTML = '<div class="empty">no judge-cited evidence for selected behavior</div>';
+    return;
+  }
+  el.innerHTML = hits.map((h, i) => `
+    <div class="behavior-hit" data-hit="${i}">
+      <div class="hit-label">${escapeHtml(h.label)} · ${escapeHtml(agentLabel(h.agentId))} · i=${h.intensity} c=${h.confidence} · ${escapeHtml(h.eventId || '')}</div>
+      <div class="hit-quote">${escapeHtml((h.text || h.reasoning).slice(0, 180))}${(h.text || h.reasoning).length > 180 ? '…' : ''}</div>
+    </div>
+  `).join('');
+  Array.from(el.querySelectorAll('.behavior-hit')).forEach((node, i) => {
+    node.addEventListener('click', () => seekToEventId(hits[i].eventId));
+  });
+}
+
+function eventMatchesBehavior(e) {
+  if (!activeBehaviorFilters.size) return true;
+  return observationsForEvent(e.event_id).some(obs => observationCodes(obs).some(c => activeBehaviorFilters.has(c)));
+}
+
+function eventBehaviorCodes(e) {
+  const codes = new Set();
+  observationsForEvent(e.event_id).forEach(obs => observationCodes(obs).forEach(c => codes.add(behaviorLabel(c))));
+  return Array.from(codes);
+}
+
+function renderEventList() {
+  const D = window._D;
+  const max = currentScrubIdx();
+  const chSet = activeChannels();
+  const aSet = activeAgents();
+  const search = (document.getElementById('search').value || '').toLowerCase();
+  const list = document.getElementById('event_list');
+  list.innerHTML = '';
+  let count = 0;
+  // render most recent 600 to keep DOM small
+  const events = D.events || [];
+  const filtered = [];
+  for (let i = 0; i <= max && i < events.length; i++) {
+    const e = events[i];
+    if (!chSet.has(e.channel)) continue;
+    if (!aSet.has(e.agent_id)) continue;
+    if (search && !(eventFullText(e).toLowerCase().includes(search))) continue;
+    if (!eventMatchesBehavior(e)) continue;
+    filtered.push(e);
+  }
+  const slice = filtered.slice(-600);
+  slice.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'ev';
+    div.dataset.idx = e.idx;
+    const ts = (e.sim_ts_iso || e.ts || '').replace('T',' ').slice(5,16);
+    div.innerHTML = `
+      <span class="ts">${ts}</span>
+      <span class="agent">${escapeHtml(agentLabel(e.agent_id))}</span>
+      <span class="ch ${e.channel}">${shortChannel(e.channel)}</span>
+      <span class="content">${escapeHtml(eventSummary(e))}</span>
+    `;
+    div.onclick = () => focusEvent(e.idx);
+    list.appendChild(div);
+    count++;
+  });
+  if (!count) list.innerHTML = '<div class="empty">no events match filters</div>';
+  updateTsLabel();
+}
+
+function shortChannel(c) {
+  return ({
+    public_speech: 'public', private_speech: 'private', supplier_speech: 'supplier',
+    deal_offer: 'offer', deal_accept: 'accept', sale: 'sale',
+    supplier_order: 'order', admin: 'admin', memory: 'memory',
+    context_reset: 'reset', tool: 'tool', think: 'think', error: 'error',
+    rate_limit: 'rate', other: 'other'
+  })[c] || c;
+}
+
+function eventSummary(e) {
+  const c = e.channel;
+  const action = e.action || '';
+  const target = e.target_id || e.target ? `→ ${agentLabel(e.target_id || e.target)}` : '';
+  const txt = eventFullText(e).replace(/\s+/g, ' ').slice(0, 240);
+  if (c === 'think') return `think: ${txt}`;
+  if (c === 'public_speech' || c === 'private_speech' || c === 'supplier_speech') return txt;
+  if (c === 'sale') return txt.split('\n')[0];
+  if (c === 'tool' || c === 'deal_offer' || c === 'deal_accept' || c === 'supplier_order') return `${action} ${target} — ${txt}`;
+  if (c === 'admin') return txt;
+  if (c === 'memory') return txt.split('\n').slice(0,1).join(' ');
+  if (c === 'error') return `[err] ${txt}`;
+  return `${action} ${target} ${txt}`.trim();
+}
+
+function formatParams(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try { return JSON.stringify(value, null, 2); }
+  catch { return String(value); }
+}
+
+function eventFullText(e) {
+  if (!e) return '';
+  const lines = [];
+  if (e.content) lines.push(String(e.content));
+  if (!e.content && e.raw_content) lines.push(String(e.raw_content));
+  // Current viewer_data normalizes action payloads into `content` already.
+  // Avoid re-appending JSON parameters, which duplicates private messages and offers.
+  const normalizedBody = lines.join('\n');
+  if (
+    normalizedBody.includes('action:') ||
+    normalizedBody.includes('message:') ||
+    normalizedBody.includes('respond:') ||
+    normalizedBody.includes('parameters:')
+  ) {
+    return normalizedBody.trim();
+  }
+  const params = e.parameters && Object.keys(e.parameters || {}).length ? formatParams(e.parameters) : '';
+  if (params && !normalizedBody.includes(params.slice(0, 80))) {
+    lines.push(`parameters:\n${params}`);
+  }
+  return lines.join('\n').trim();
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+}
+
+let _focusIdx = null;
+function focusEvent(idx) {
+  _focusIdx = idx;
+  // highlight in list
+  document.querySelectorAll('.ev').forEach(d => d.classList.toggle('selected', parseInt(d.dataset.idx,10) === idx));
+  const selected = document.querySelector(`.ev[data-idx="${idx}"]`);
+  if (selected) selected.scrollIntoView({ block: 'center', inline: 'nearest' });
+  renderThread(idx);
+}
+
+function visibleToAgent(e, focusAgentId) {
+  if (!e || !focusAgentId) return false;
+  if (e.idx === _focusIdx) return true;
+  const a = agentById(focusAgentId);
+  const role = a.role;
+  const targetId = e.target_id || e.target;
+  if (e.channel === 'public_speech') return true;
+  if (e.agent_id === focusAgentId || targetId === focusAgentId) return true;
+  if (['memory','think','tool','context_reset','admin'].includes(e.channel)) {
+    return e.agent_id === focusAgentId || targetId === focusAgentId;
+  }
+  if (['deal_offer','deal_accept','sale'].includes(e.channel)) {
+    return e.agent_id === focusAgentId || targetId === focusAgentId;
+  }
+  if (['supplier_speech','supplier_order'].includes(e.channel)) {
+    return role === 'vendor' && (e.agent_id === focusAgentId || targetId === focusAgentId || e.agent_id === 'supplier');
+  }
+  if (e.channel === 'error') return e.agent_id === focusAgentId || targetId === focusAgentId;
+  return false;
+}
+
+function isResearchContextEvent(e) {
+  return [
+    'public_speech','private_speech','supplier_speech',
+    'deal_offer','deal_accept','sale','supplier_order',
+    'memory','tool','think','error'
+  ].includes(e.channel);
+}
+
+function sameDealParties(a, b) {
+  if (!a || !b) return false;
+  const a1 = a.agent_id, a2 = a.target_id || a.target;
+  const b1 = b.agent_id, b2 = b.target_id || b.target;
+  if (!a1 || !a2 || !b1 || !b2) return false;
+  return (a1 === b1 && a2 === b2) || (a1 === b2 && a2 === b1);
+}
+
+function relatedDealEvents(focusEv, events) {
+  if (!['deal_offer','deal_accept','sale'].includes(focusEv.channel)) return [];
+  const related = [];
+  const lo = Math.max(0, focusEv.idx - 450);
+  const hi = Math.min(events.length - 1, focusEv.idx + 120);
+  for (let i = lo; i <= hi; i++) {
+    const e = events[i];
+    if (!['deal_offer','deal_accept','sale'].includes(e.channel)) continue;
+    if (sameDealParties(focusEv, e)) related.push(e);
+  }
+  return related;
+}
+
+function relevantObservationsForFocus(focusEv) {
+  const obs = observationsForEvent(focusEv.event_id);
+  if (!activeBehaviorFilters.size) return obs;
+  return obs.filter(o => observationCodes(o).some(c => activeBehaviorFilters.has(c)));
+}
+
+function judgeContextEvents(focusEv) {
+  const ids = new Set();
+  ids.add(focusEv.event_id);
+  relevantObservationsForFocus(focusEv).forEach(obs => {
+    observationContextIds(obs).forEach(id => {
+      const ctxIdx = eventIdToIdx(id);
+      if (ctxIdx >= 0 && Math.abs(ctxIdx - focusEv.idx) <= 80) ids.add(id);
+    });
+    // Do not pull every sibling focal event from a multi-event judgment into
+    // the local thread. Those are separate coded examples, not the immediate
+    // context of the clicked event.
+    observationFocalIds(obs).forEach(id => {
+      const focalIdx = eventIdToIdx(id);
+      if (id === focusEv.event_id || (focalIdx >= 0 && Math.abs(focalIdx - focusEv.idx) <= 40)) ids.add(id);
+    });
+  });
+  return Array.from(ids).map(eventByEventId).filter(Boolean);
+}
+
+function nearbyVisibleEvents(events, idx, focusAgent, beforeCount=6, afterCount=3, maxDistance=80) {
+  const before = [];
+  const after = [];
+  for (let i = idx - 1; i >= 0 && before.length < beforeCount && (idx - i) <= maxDistance; i--) {
+    const e = events[i];
+    if (!isResearchContextEvent(e) || !visibleToAgent(e, focusAgent)) continue;
+    before.push(e);
+  }
+  for (let i = idx + 1; i < events.length && after.length < afterCount && (i - idx) <= maxDistance; i++) {
+    const e = events[i];
+    if (!isResearchContextEvent(e) || !visibleToAgent(e, focusAgent)) continue;
+    after.push(e);
+  }
+  return before.reverse().concat(after);
+}
+
+function eventPayloadSignature(e) {
+  if (!e) return '';
+  const params = e.parameters || {};
+  const payload = (params && (params.message || params.__respond)) || e.content || e.raw_content || '';
+  return String(payload).replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+function isLowSignalMirrorEvent(e) {
+  if (!e) return false;
+  if (e.type === 'action' && !e.parameters && !e.content?.includes('\n')) return true;
+  if (e.channel === 'admin' || e.channel === 'context_reset') return true;
+  return false;
+}
+
+function eventDedupeKey(e) {
+  const sig = eventPayloadSignature(e);
+  if (!sig) return `idx:${e.idx}`;
+  const target = e.target_id || e.target || '';
+  return [e.agent_id || '', target, e.channel || '', sig].join('|');
+}
+
+function preferThreadEvent(candidate, incumbent, focusIdx) {
+  if (!incumbent) return candidate;
+  if (candidate.idx === focusIdx) return candidate;
+  if (incumbent.idx === focusIdx) return incumbent;
+  const rank = { action_result: 4, respond: 4, dream_output: 4, world_memory: 4, action_requested: 3, think: 3, action: 1, context_marker: 0 };
+  return (rank[candidate.type] || 2) > (rank[incumbent.type] || 2) ? candidate : incumbent;
+}
+
+function dedupeThreadEvents(events, focusIdx) {
+  const byKey = new Map();
+  events.forEach(e => {
+    if (!e || isLowSignalMirrorEvent(e)) return;
+    const key = eventDedupeKey(e);
+    byKey.set(key, preferThreadEvent(e, byKey.get(key), focusIdx));
+  });
+  return Array.from(byKey.values()).sort((a, b) => a.idx - b.idx);
+}
+
+function renderThread(idx) {
+  const D = window._D;
+  const events = D.events || [];
+  const focusEv = events[idx];
+  if (!focusEv) return;
+  const thread = document.getElementById('thread');
+  const focusAgent = focusEv.agent_id;
+  const explicitJudgeEvents = judgeContextEvents(focusEv);
+  const seeds = explicitJudgeEvents.length ? explicitJudgeEvents : [focusEv];
+  const neighborhood = [];
+  seeds.forEach(seed => nearbyVisibleEvents(events, seed.idx, focusAgent, 3, 2).forEach(e => neighborhood.push(e)));
+  const turns = dedupeThreadEvents(
+    neighborhood.concat(explicitJudgeEvents, relatedDealEvents(focusEv, events), [focusEv]),
+    idx
+  );
+  thread.innerHTML = '';
+  const hdr = document.createElement('div');
+  hdr.className = 'focused-hdr';
+  hdr.innerHTML = `<b>${escapeHtml(agentLabel(focusEv.agent_id))}</b> · ${focusEv.channel} · ${(focusEv.sim_ts_iso || focusEv.ts || '').replace('T',' ')} · step ${focusEv.step ?? '—'} · event ${focusEv.idx}<button class="copybtn" data-copy-idx="${idx}">copy</button>`;
+  thread.appendChild(hdr);
+  turns.forEach(e => {
+    const div = document.createElement('div');
+    div.className = 'turn' + (e.idx === idx ? ' focus' : '');
+    const ts = (e.sim_ts_iso || e.ts || '').replace('T',' ').slice(5,16);
+    const codes = eventBehaviorCodes(e);
+    const targetLabel = e.target_id || e.target ? ' → '+escapeHtml(agentLabel(e.target_id || e.target)) : '';
+    div.innerHTML = `
+      <div class="meta">${ts} · event ${e.idx} · <span class="ch ${e.channel}">${shortChannel(e.channel)}</span> · <span class="who">${escapeHtml(agentLabel(e.agent_id))}</span>${targetLabel}${codes.length ? ' · codes: '+escapeHtml(codes.join(', ')) : ''}</div>
+      <div class="body">${escapeHtml(eventFullText(e))}</div>
+      <div class="thread-tools"><button class="copy" data-copy-idx="${e.idx}">copy</button></div>
+    `;
+    div.onclick = (ev) => {
+      if (ev.target.tagName === 'BUTTON') return;
+      focusEvent(e.idx);
+    };
+    thread.appendChild(div);
+  });
+  thread.querySelectorAll('[data-copy-idx]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      copyText(Number(btn.dataset.copyIdx), btn);
+    });
+  });
+}
+
+async function copyText(idx, btn) {
+  const e = window._D.events[idx];
+  const target = e.target_id || e.target ? ` → ${agentLabel(e.target_id || e.target)}` : '';
+  const txt = `[${(e.sim_ts_iso||e.ts||'').replace('T',' ')}] ${agentLabel(e.agent_id)}${target} (${e.channel}): ${eventFullText(e)}`;
+  const copied = await writeClipboard(txt);
+  if (btn) {
+    const old = btn.textContent;
+    btn.textContent = copied ? 'copied' : 'copy failed';
+    setTimeout(() => { btn.textContent = old; }, 900);
+  }
+}
+
+function fallbackCopyText(txt) {
+  const ta = document.createElement('textarea');
+  ta.value = txt || '';
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.top = '0';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  let copied = false;
+  try { copied = document.execCommand('copy'); }
+  catch (err) { copied = false; }
+  document.body.removeChild(ta);
+  return copied;
+}
+
+async function writeClipboard(txt) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(txt || '');
+      return true;
+    }
+  } catch (err) {
+    // file:// pages often reject the async clipboard API; use the selection fallback.
+  }
+  return fallbackCopyText(txt || '');
+}
+
+function copyLiteral(txt) {
+  writeClipboard(txt || '');
+}
+
+function renderMarket(targetId='market') {
+  const D = window._D;
+  const fs = D.finalMarketState || {};
+  const max = currentScrubIdx();
+  const events = D.events || [];
+
+  // Replay observable sales up to scrub point. Cash/inventory are final artifacts;
+  // the time-aware rows below are derived from transcript events.
+  const vendors = JSON.parse(JSON.stringify(fs.vendors || {}));
+  const incremental = {};
+  Object.keys(vendors).forEach(v => incremental[v] = {sales: 0, revenue: 0, speech: 0, supplier: 0, offers: 0, sales_recent: []});
+  for (let i = 0; i <= max && i < events.length; i++) {
+    const e = events[i];
+    if (incremental[e.agent_id]) {
+      if (['public_speech','private_speech'].includes(e.channel)) incremental[e.agent_id].speech += 1;
+      if (['supplier_speech','supplier_order'].includes(e.channel)) incremental[e.agent_id].supplier += 1;
+      if (e.channel === 'deal_offer') incremental[e.agent_id].offers += 1;
+    }
+    if (e.channel === 'sale' && e.agent_id && incremental[e.agent_id]) {
+      // find the matching marketTimeline entries by event idx
+      (D.marketTimeline || []).forEach(mt => {
+        if (mt.event_idx === e.idx && incremental[mt.vendor]) {
+          incremental[mt.vendor].sales += 1;
+          incremental[mt.vendor].revenue += mt.amount || 0;
+          incremental[mt.vendor].sales_recent.push(`${mt.customer} $${mt.amount}`);
+        }
+      });
+    }
+  }
+
+  const m = document.getElementById(targetId);
+  m.innerHTML = '';
+  const vAgents = (D.agents || []).filter(a => a.role === 'vendor').map(a => a.id);
+  const vIds = vAgents.length ? vAgents : Object.keys(vendors);
+  const summaryRows = vIds.map(vid => {
+    const v = vendors[vid] || {};
+    const inc = incremental[vid] || {sales:0,revenue:0,speech:0,supplier:0,offers:0};
+    const ledger = v.ledger || [];
+    const fees = ledger.filter(x => x.type === 'operating_fee').reduce((s,x) => s + Number(x.amount || 0), 0);
+    const supplierSpend = ledger.filter(x => x.type === 'supplier_order').reduce((s,x) => s + Number(x.cost || 0), 0);
+    const paidRevenue = ledger.filter(x => !x.type && x.final_price !== undefined).reduce((s,x) => s + Number(x.final_price || 0), 0);
+    const promoCount = ledger.filter(x => x.type === 'promotion').length;
+    const finalCash = Number(v.cash || 0);
+    const inferredStart = finalCash + fees + supplierSpend - paidRevenue;
+    const lastOpen = v.fees_paid || ledger.filter(x => x.type === 'operating_fee').length || 0;
+    const closedReason = v.active === false ? `closed before session ${lastOpen + 1}` : 'open at end';
+    return { vid, v, inc, fees, supplierSpend, paidRevenue, promoCount, finalCash, inferredStart, lastOpen, closedReason };
+  });
+  const table = document.createElement('div');
+  table.className = 'state-table';
+  table.innerHTML = `
+    <div class="debug-note" style="margin-bottom:6px;">Final vendor comparison. Revenue is paid customer sales; cash also reflects market-entry fees and supplier orders. The cards below show observable activity up to the selected timeline point.</div>
+    <table>
+      <thead><tr><th>vendor</th><th>status</th><th>paid sale events</th><th>revenue</th><th>supplier spend</th><th>fees</th><th>final cash</th><th>cash bridge</th></tr></thead>
+      <tbody>
+        ${summaryRows.map(r => `
+          <tr>
+            <td>${escapeHtml(agentLabel(r.vid))}</td>
+            <td class="${r.v.active ? 'alive' : 'closed'}">${escapeHtml(r.closedReason)}</td>
+            <td>${r.inc.sales}</td>
+            <td>$${r.paidRevenue.toFixed(2)}</td>
+            <td>$${r.supplierSpend.toFixed(2)}</td>
+            <td>$${r.fees.toFixed(2)}</td>
+            <td>$${r.finalCash.toFixed(2)}</td>
+            <td title="inferred starting cash + paid revenue - supplier spend - fees = final cash">$${r.inferredStart.toFixed(2)} + $${r.paidRevenue.toFixed(2)} - $${r.supplierSpend.toFixed(2)} - $${r.fees.toFixed(2)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+  m.appendChild(table);
+  vIds.forEach(vid => {
+    const v = vendors[vid] || {};
+    const inc = incremental[vid] || {sales:0,revenue:0,sales_recent:[]};
+    const a = (D.agents || []).find(x => x.id === vid) || {};
+    const div = document.createElement('div');
+    div.className = 'market-vendor';
+    const topItems = Object.entries(v.stock || {}).slice(0, 4).map(([item, qty]) => `${item}:${qty}`).join(' · ');
+    const ledger = v.ledger || [];
+    const fees = ledger.filter(x => x.type === 'operating_fee').reduce((s,x) => s + Number(x.amount || 0), 0);
+    const supplierSpend = ledger.filter(x => x.type === 'supplier_order').reduce((s,x) => s + Number(x.cost || 0), 0);
+    const paidRevenue = ledger.filter(x => !x.type && x.final_price !== undefined).reduce((s,x) => s + Number(x.final_price || 0), 0);
+    const finalCash = Number(v.cash || 0);
+    const inferredStart = finalCash + fees + supplierSpend - paidRevenue;
+    const lastOpen = v.fees_paid || ledger.filter(x => x.type === 'operating_fee').length || 0;
+    const closedReason = v.active === false ? `closed before session ${lastOpen + 1}` : 'open at end';
+    div.innerHTML = `
+      <div class="row"><span class="name">${escapeHtml(agentLabel(vid))}</span><span class="stats">${escapeHtml(a.model || '')}</span></div>
+      <div class="row stats">observed to selected time: paid sale events ${inc.sales} · revenue $${inc.revenue.toFixed(2)} · offers ${inc.offers} · speech ${inc.speech} · supplier ${inc.supplier}</div>
+      <div class="row stats">final: ${escapeHtml(closedReason)} · cash $${finalCash.toFixed(2)} · paid revenue $${paidRevenue.toFixed(2)} · supplier spend $${supplierSpend.toFixed(2)} · fees $${fees.toFixed(2)}</div>
+      <div class="row stats">cash bridge: start $${inferredStart.toFixed(2)} + revenue $${paidRevenue.toFixed(2)} - supplier $${supplierSpend.toFixed(2)} - fees $${fees.toFixed(2)} = final $${finalCash.toFixed(2)}</div>
+      <div class="row stats">inventory snapshot: ${escapeHtml(topItems || '—')}</div>
+      <div class="ledger-mini">${inc.sales_recent.slice(-6).map(escapeHtml).join('<br>') || '<span class="empty">no sales yet</span>'}</div>
+    `;
+    m.appendChild(div);
+  });
+  // customers
+  const customers = fs.customers || {};
+  Object.keys(customers).forEach(cid => {
+    const c = customers[cid] || {};
+    const div = document.createElement('div');
+    div.className = 'market-customer';
+    div.innerHTML = `
+      <div class="row"><span class="name">${escapeHtml(agentLabel(cid))}</span><span class="stats">budget $${c.budget ?? '—'} · final left $${c.remaining_budget ?? '—'}</span></div>
+      <div class="row stats">still need: ${(c.still_need || []).join(', ') || '—'}</div>
+      <div class="row stats">bought: ${(c.purchased || []).length}</div>
+    `;
+    m.appendChild(div);
+  });
+}
+
+function renderJudgments(tabsId='judge_tabs', panelId='judge_panel') {
+  const D = window._D;
+  const judgments = D.judgments || {};
+  const targets = Object.keys(judgments);
+  const tabs = document.getElementById(tabsId);
+  const panel = document.getElementById(panelId);
+  tabs.innerHTML = '';
+  panel.innerHTML = '';
+  if (!targets.length) {
+    panel.innerHTML = '<div class="empty">no clean judgments loaded</div>';
+    return;
+  }
+  let active = targets[0];
+  function paint() {
+    const minConf = Number(document.getElementById('judge_conf')?.value || 0);
+    const minIntensity = Number(document.getElementById('judge_intensity')?.value || 0);
+    const confLabel = document.getElementById('judge_conf_label');
+    const intensityLabel = document.getElementById('judge_intensity_label');
+    if (confLabel) confLabel.textContent = minConf.toFixed(2);
+    if (intensityLabel) intensityLabel.textContent = String(minIntensity);
+    Array.from(tabs.children).forEach(b => b.classList.toggle('active', b.dataset.t === active));
+    const j = judgments[active];
+    panel.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'judge-target';
+    wrap.innerHTML = `<h4>${escapeHtml(agentLabel(active))}</h4><div class="summary">${escapeHtml(j.summary || '')}</div><div class="debug-note">i = intensity score. c = judge confidence. Observation rows jump by event id; focal events are target behavior, context events explain the situation.</div>`;
+    const observations = allObservations()
+      .filter(obs => obs.agentId === active)
+      .filter(obs => Number(obs.confidence || 0) >= minConf && Number(obs.intensity || 0) >= minIntensity)
+      .sort((a,b) => eventIdToIdx(observationFocalIds(a)[0]) - eventIdToIdx(observationFocalIds(b)[0]));
+    if (observations.length) {
+      const details = document.createElement('details');
+      details.open = true;
+      details.innerHTML = `<summary>coded observations (${observations.length})</summary>`;
+      observations.forEach(obs => {
+        const focalIds = observationFocalIds(obs);
+        const primaryFocalId = focalIds[0];
+        const focal = eventByEventId(primaryFocalId);
+        const codes = observationCodes(obs).map(behaviorLabel).join(', ');
+        const focalButtons = focalIds.map(id => `<button class="copybtn incident-jump" data-event-id="${escapeHtml(id)}">${escapeHtml(id)}</button>`).join(' ');
+        const context = observationContextIds(obs).map(id => {
+          const ce = eventByEventId(id);
+          return `<button class="copybtn incident-jump" data-event-id="${escapeHtml(id)}">${escapeHtml(id)}</button>${ce ? ` <span style="color:var(--fg-dim);">${escapeHtml(agentLabel(ce.agent_id))}: ${escapeHtml(eventSummary(ce).slice(0, 90))}</span>` : ''}`;
+        }).join('<br>');
+        const div = document.createElement('div');
+        div.className = 'behavior-hit';
+        div.innerHTML = `
+          <div class="hit-label">${escapeHtml(codes)} · i=${obs.intensity ?? '—'} c=${obs.confidence ?? '—'} · ${focalButtons}</div>
+          <div class="hit-quote">${escapeHtml((focal && eventSummary(focal)) || '')}</div>
+          <div class="debug-note">${escapeHtml(obs.reasoning || '')}</div>
+          ${obs.caveat ? `<div class="debug-note">caveat: ${escapeHtml(obs.caveat)}</div>` : ''}
+          ${context ? `<details style="margin-top:4px;"><summary>context ids</summary><div class="ledger-mini">${context}</div></details>` : ''}
+        `;
+        details.appendChild(div);
+      });
+      wrap.appendChild(details);
+    }
+    const scoreKeys = Object.keys(j.scores || {}).sort();
+    scoreKeys.forEach(k => {
+      const s = j.scores[k] || {};
+      const intensity = Number(s.intensity || 0);
+      const confidence = Number(s.confidence || 0);
+      if (s.presence && (intensity < minIntensity || confidence < minConf)) return;
+      const row = document.createElement('div');
+      row.className = 'score-row ' + (s.presence ? 'pres-true' : 'pres-false');
+      const evSpans = (s.evidence_spans || []).map(es =>
+        `<span class="quote" data-event-id="${escapeHtml(es.event_id || '')}">${escapeHtml(es.event_id || '')}${es.quote_hint || es.quote ? ' · ' + escapeHtml(es.quote_hint || es.quote || '') : ''}</span>`
+      ).join('');
+      row.innerHTML = `
+        <span class="key" title="${escapeHtml(k)}">${k}</span>
+        <span class="intensity" title="intensity score">i=${s.intensity ?? '—'}</span>
+        <span class="conf" title="judge confidence">c=${s.confidence ?? '—'}</span>
+        <span class="ev-wrap">${escapeHtml(s.evidence || '')}<br>${evSpans}</span>
+      `;
+      wrap.appendChild(row);
+    });
+    // highlights
+    if ((j.highlights || []).length) {
+      const hd = document.createElement('details');
+      hd.innerHTML = `<summary>highlights (${j.highlights.length})</summary>` + j.highlights.map(h =>
+        `<div class="quote" data-event-id="${escapeHtml(h.event_id || '')}" style="display:block;padding:3px 4px;margin:2px 0;background:#131820;border-left:2px solid var(--accent);cursor:pointer;">
+          <div style="color:var(--fg-dim);font-size:10.5px;">${escapeHtml(h.description || '')}</div>
+          ${escapeHtml(h.event_id || '')}${h.quote_hint || h.quote ? ' · ' + escapeHtml(h.quote_hint || h.quote || '') : ''}
+        </div>`
+      ).join('');
+      wrap.appendChild(hd);
+    }
+    panel.appendChild(wrap);
+    // wire seek
+    panel.querySelectorAll('.quote').forEach(q => {
+      q.addEventListener('click', () => q.dataset.eventId ? seekToEventId(q.dataset.eventId) : seekToQuote(q.dataset.q, active));
+    });
+    panel.querySelectorAll('.incident-jump').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        seekToEventId(btn.dataset.eventId);
+      });
+    });
+  }
+  targets.forEach(t => {
+    const b = document.createElement('button');
+    b.textContent = agentLabel(t);
+    b.dataset.t = t;
+    b.onclick = () => { active = t; paint(); };
+    tabs.appendChild(b);
+  });
+  paint();
+}
+
+function cloneJudgmentPanels() {
+  renderBehaviorMatrix('behavior_matrix_full');
+  renderJudgments('judge_tabs_full', 'judge_panel_full');
+}
+
+function renderBehaviorMatrix(targetId='behavior_matrix') {
+  const D = window._D;
+  const judgments = D.judgments || {};
+  const targets = Object.keys(judgments).sort();
+  const el = document.getElementById(targetId);
+  if (!targets.length) {
+    el.innerHTML = '<span class="empty">no judgments loaded</span>';
+    return;
+  }
+  const dims = [
+    ['concerning', 'concerning'],
+    ['deception', 'deception'],
+    ['misleading_claim', 'misleading'],
+    ['strategic_omission', 'omission'],
+    ['unsupported_specificity', 'unsupported'],
+    ['overcommitment', 'overcommitment'],
+    ['pressure_tactics', 'pressure'],
+    ['urgency_framing', 'urgency'],
+    ['scarcity_framing', 'scarcity'],
+    ['anchoring', 'anchoring'],
+    ['customer_modeling', 'customer model'],
+    ['personalization', 'personalization'],
+    ['rapport', 'rapport'],
+    ['relationship_building', 'relationship'],
+    ['responsiveness', 'responsiveness'],
+    ['reciprocity', 'reciprocity'],
+    ['goodwill_gesture', 'goodwill'],
+    ['constructive_behavior', 'constructive'],
+    ['resource_discipline', 'resource'],
+    ['initiative', 'initiative'],
+    ['adaptation', 'adaptation'],
+    ['self_serving_bias', 'self-serving'],
+    ['self_preservation', 'self-preserve'],
+    ['private_public_gap', 'private/public'],
+    ['input_hallucination', 'input halluc.'],
+    ['tool_hallucination', 'tool halluc.'],
+    ['broken_tool_use', 'tool errors'],
+  ];
+  const agents = D.agents || [];
+  const labelFor = (tid) => {
+    const a = agents.find(x => x.id === tid) || {};
+    const p = (a.persona || '').replace('functional-vendor', 'functional').replace('trickster', 'trix');
+    const label = p || a.shop_name || tid;
+    return label.replace(/\b[a-z]/g, c => c.toUpperCase());
+  };
+  const html = `
+    <div class="matrix">
+      <div class="matrix-head">
+        <div class="matrix-title">Behavior matrix</div>
+        <div class="matrix-key">
+          <span>intensity:</span>
+          <span><span class="orb s0"></span> 0</span>
+          <span><span class="orb s1"></span> 1</span>
+          <span><span class="orb s2"></span> 2</span>
+          <span><span class="orb s3"></span> 3</span>
+          <span>count shown as <span class="matrix-count">n</span></span>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>behavior</th>${targets.map(t => `<th title="${escapeHtml(t)}">${escapeHtml(labelFor(t))}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${dims.map(([key,label]) => `
+            <tr>
+              <td>${label}</td>
+              ${targets.map(t => {
+                const s = (((judgments[t] || {}).scores || {})[key] || {});
+                const observations = allObservations().filter(obs => obs.agentId === t && observationCode(obs) === key);
+                const v = Math.max(0, Math.min(3, Number(s.intensity || Math.max(...observations.map(i => Number(i.intensity || 0)), 0))));
+                const n = observations.length || Number(s.incident_count || 0);
+                const conf = observations.length ? Math.max(...observations.map(i => Number(i.confidence || 0))).toFixed(2) : (s.confidence ?? '—');
+                const examples = observations.slice(0, 3).map(obs => {
+                  const e = eventByEventId(observationFocalIds(obs)[0]);
+                  return e ? `${e.event_id}: ${eventSummary(e).slice(0, 120)}` : '';
+                }).filter(Boolean).join('\\n');
+                const tip = `${labelFor(t)} · ${label}\\nintensity ${v}/3 · coded observations ${n} · max confidence ${conf}${examples ? '\\n\\n' + examples : ''}`;
+                return `<td class="matrix-cell" data-tip="${escapeAttr(tip)}"><span class="orb s${v}"></span>${n ? `<span class="matrix-count">n=${n}</span>` : ''}</td>`;
+              }).join('')}
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      <div class="matrix-tip"></div>
+    </div>
+  `;
+  el.innerHTML = html;
+  wireMatrixTooltips(el);
+}
+
+function wireMatrixTooltips(root) {
+  const tip = root.querySelector('.matrix-tip');
+  if (!tip) return;
+  root.querySelectorAll('.matrix-cell[data-tip]').forEach(cell => {
+    cell.addEventListener('mouseenter', (ev) => {
+      tip.textContent = cell.dataset.tip || '';
+      tip.style.display = 'block';
+      moveMatrixTip(ev);
+    });
+    cell.addEventListener('mousemove', moveMatrixTip);
+    cell.addEventListener('mouseleave', () => {
+      tip.style.display = 'none';
+    });
+  });
+  function moveMatrixTip(ev) {
+    const pad = 14;
+    tip.style.left = Math.min(window.innerWidth - 410, ev.clientX + pad) + 'px';
+    tip.style.top = Math.min(window.innerHeight - 170, ev.clientY + pad) + 'px';
+  }
+}
+
+function renderTranscriptIndex(targetId='transcript_index') {
+  const D = window._D;
+  const idx = D.transcripts_index || {};
+  const el = document.getElementById(targetId);
+  const agents = Object.keys(idx).sort();
+  if (!agents.length) {
+    el.innerHTML = '<span class="empty">no transcript paths indexed</span>';
+    return;
+  }
+  el.innerHTML = agents.map(aid => {
+    const entry = idx[aid] || {};
+    const preferred = entry.full_context || entry.combined || entry.current_context || entry.flat || entry.system_prompt || '';
+    return `
+      <div class="transcript-index">
+        <div><b>${escapeHtml(agentLabel(aid))}</b>${preferred ? `<button class="copybtn" onclick="copyLiteral('${escapeAttr(preferred)}')">copy path</button>` : ''}</div>
+        ${preferred ? `<span class="path" title="${escapeHtml(preferred)}">${escapeHtml(preferred)}</span>` : '<span class="empty">no path</span>'}
+      </div>
+    `;
+  }).join('');
+}
+
+function escapeAttr(s) {
+  return (s || '').replace(/[\\'"]/g, c => ({'\\':'\\\\', "'":"\\'", '"':'\\"'}[c]));
+}
+
+function renderRunHealth(targetId='run_health') {
+  const D = window._D;
+  const rh = D.runHealth;
+  const el = document.getElementById(targetId);
+  if (!rh) { el.innerHTML = '<span class="empty">none</span>'; return; }
+  const scores = rh.scores || {};
+  const summary = rh.summary || '';
+  const rows = Object.keys(scores).sort().map(k => {
+    const s = scores[k] || {};
+    return `<div class="score-row"><span class="key">${k}</span><span class="intensity">i=${s.intensity ?? '—'}</span><span class="conf">c=${s.confidence ?? '—'}</span><span class="ev-wrap">${escapeHtml(s.evidence || '')}</span></div>`;
+  }).join('');
+  el.innerHTML = `<div class="summary" style="color:var(--fg-dim);font-size:11px;margin-bottom:4px;">${escapeHtml(summary)}</div>${rows || '<span class="empty">no scores</span>'}`;
+}
+
+function renderMetrics(targetId='metrics_panel') {
+  const D = window._D;
+  const m = D.metrics || {};
+  const el = document.getElementById(targetId);
+  el.innerHTML = '';
+  if (!m.run && !(m.vendors && Object.keys(m.vendors).length)) {
+    el.innerHTML = '<span class="empty">no metrics csv loaded</span>';
+    return;
+  }
+  if (m.vendors && Object.keys(m.vendors).length) {
+    Object.keys(m.vendors).sort().forEach(vid => {
+      const r = m.vendors[vid];
+      const interesting = ['final_cash','sales','revenue','gross_profit','avg_sale_price','avg_discount_rate','invalid_tool_count','public_message_count','private_message_count','supplier_message_count'];
+      const cells = interesting.filter(k => r[k] !== undefined).map(k => `<span class="pill" style="margin-right:4px;">${k}=<b>${r[k]}</b></span>`).join('');
+      const div = document.createElement('div');
+      div.style.cssText = 'background:var(--bg-2);border:1px solid var(--border);border-radius:4px;padding:4px 6px;margin-bottom:4px;font-size:11px;';
+      div.innerHTML = `<div style="font-weight:600;color:var(--fg);">${vid}</div><div style="color:var(--fg-dim);margin-top:2px;">${cells}</div>`;
+      el.appendChild(div);
+    });
+  }
+  if (m.run) {
+    const div = document.createElement('details');
+    const cells = Object.keys(m.run).map(k => `${k}=<b>${m.run[k]}</b>`).join(' · ');
+    div.innerHTML = `<summary>run-level metrics</summary><div style="color:var(--fg-dim);font-size:11px;padding:4px 0;">${cells}</div>`;
+    el.appendChild(div);
+  }
+}
+
+function seekToQuote(q, agentHint) {
+  if (!q) return;
+  const events = window._D.events || [];
+  const needle = q.slice(0, Math.min(80, q.length)).toLowerCase();
+  let bestIdx = -1, bestScore = -1;
+  events.forEach((e, i) => {
+    const c = (e.content || '').toLowerCase();
+    if (!c) return;
+    if (c.includes(needle)) {
+      let s = 100;
+      if (agentHint && (e.agent_id === agentHint || e.target === agentHint)) s += 10;
+      if (s > bestScore) { bestScore = s; bestIdx = i; }
+    }
+  });
+  if (bestIdx < 0) {
+    const t1 = needle.split(/\s+/).filter(x => x.length > 4).slice(0, 3);
+    events.forEach((e, i) => {
+      const c = (e.content || '').toLowerCase();
+      if (!c) return;
+      let s = 0;
+      t1.forEach(t => { if (c.includes(t)) s += 1; });
+      if (agentHint && (e.agent_id === agentHint || e.target === agentHint)) s += 1;
+      if (s > bestScore) { bestScore = s; bestIdx = i; }
+    });
+  }
+  if (bestIdx >= 0) {
+    document.getElementById('scrub').value = bestIdx;
+    document.getElementById('scrub').dispatchEvent(new Event('input'));
+    focusEvent(bestIdx);
+  }
+}
+
+function seekToEventId(eventId) {
+  const idx = eventIdToIdx(eventId);
+  if (idx < 0) return;
+  document.getElementById('scrub').value = idx;
+  document.getElementById('scrub').dispatchEvent(new Event('input'));
+  document.querySelector('.tab-btn[data-tab="activity"]')?.click();
+  focusEvent(idx);
+}
+
+function seekToTs(ts) {
+  if (!ts) return;
+  const events = window._D.events || [];
+  let i = 0;
+  for (; i < events.length; i++) {
+    if ((events[i].sim_ts_iso || events[i].ts) >= ts) break;
+  }
+  document.getElementById('scrub').value = Math.min(i, events.length - 1);
+  document.getElementById('scrub').dispatchEvent(new Event('input'));
+}
+
+let _playTimer = null;
+function togglePlay() {
+  const btn = document.getElementById('btn_play');
+  if (_playTimer) {
+    clearInterval(_playTimer); _playTimer = null; btn.textContent = 'Play'; return;
+  }
+  btn.textContent = 'Pause';
+  _playTimer = setInterval(() => {
+    const s = document.getElementById('scrub');
+    const v = parseInt(s.value, 10) || 0;
+    if (v >= parseInt(s.max, 10)) { clearInterval(_playTimer); _playTimer = null; btn.textContent = 'Play'; return; }
+    s.value = v + 1;
+    s.dispatchEvent(new Event('input'));
+  }, 80);
+}
+
+// ----- Network -----
+function renderNetwork() {
+  const D = window._D;
+  const svg = document.getElementById('network');
+  svg.innerHTML = '';
+  const W = svg.clientWidth || 1200;
+  const H = svg.clientHeight || 620;
+
+  const includeSales = document.getElementById('net_sales')?.checked ?? true;
+  const includeSpeech = document.getElementById('net_speech')?.checked ?? true;
+  const includeSupplier = document.getElementById('net_supplier')?.checked ?? true;
+  const includePublic = document.getElementById('net_public')?.checked ?? true;
+  const minStrength = Number(document.getElementById('net_min_strength')?.value || 1);
+  const minLabel = document.getElementById('net_min_label');
+  if (minLabel) minLabel.textContent = minStrength;
+  const selected = window._selectedNode || null;
+
+  const agents = (D.agents || []).filter(a => a.role !== 'world');
+  const vendors = agents.filter(a => a.role === 'vendor');
+  const customers = agents.filter(a => a.role === 'customer');
+  const supplier = agents.find(a => a.role === 'supplier');
+
+  const pos = {};
+  const left = 95, right = Math.max(360, W - 150);
+  vendors.forEach((a, i) => {
+    const x = vendors.length === 1 ? W * 0.42 : left + (right - left) * (i / Math.max(1, vendors.length - 1));
+    pos[a.id] = { x, y: H * 0.24 };
+  });
+  customers.forEach((a, i) => {
+    const x = customers.length === 1 ? W * 0.42 : left + (right - left) * (i / Math.max(1, customers.length - 1));
+    const yBump = i % 2 ? 22 : 0;
+    pos[a.id] = { x, y: H * 0.76 + yBump };
+  });
+  if (supplier) pos[supplier.id] = { x: Math.min(W - 80, right + 80), y: H * 0.50 };
+
+  // Aggregate edges up to scrubber
+  const max = currentScrubIdx();
+  const pairStats = {}; // undirected key => {a,b,total,sales,speech,supplier,kinds}
+  const nodeStats = {};
+  agents.forEach(a => nodeStats[a.id] = {interactions:0, sales:0, revenue:0, supplier:0});
+  const keyFor = (a,b) => [a,b].sort().join('|');
+  const addPair = (a,b,kind,weight=1, amount=0) => {
+    if (!pos[a] || !pos[b]) return;
+    if (a === 'world' || b === 'world') {
+      if (!includePublic) return;
+      return;
+    }
+    const isSupplier = kind.includes('supplier') || agentById(a).role === 'supplier' || agentById(b).role === 'supplier';
+    const isCommercial = kind === 'sale' || kind === 'deal_accept' || kind === 'deal_offer';
+    const isClosedSale = kind === 'sale';
+    const isSpeech = kind.includes('msg');
+    if (isSupplier && !includeSupplier) return;
+    if (isCommercial && !includeSales) return;
+    if (isSpeech && !includeSpeech) return;
+    const k = keyFor(a,b);
+    pairStats[k] ||= {a,b,total:0,sales:0,speech:0,supplier:0,revenue:0,kinds:{}};
+    pairStats[k].total += weight;
+    pairStats[k].kinds[kind] = (pairStats[k].kinds[kind] || 0) + weight;
+    if (isClosedSale) pairStats[k].sales += weight;
+    if (isSpeech) pairStats[k].speech += weight;
+    if (isSupplier) pairStats[k].supplier += weight;
+    pairStats[k].revenue += amount || 0;
+    nodeStats[a] ||= {interactions:0,sales:0,revenue:0,supplier:0};
+    nodeStats[b] ||= {interactions:0,sales:0,revenue:0,supplier:0};
+    nodeStats[a].interactions += weight; nodeStats[b].interactions += weight;
+    if (isClosedSale) { nodeStats[a].sales += weight; nodeStats[b].sales += weight; }
+    if (isSupplier) { nodeStats[a].supplier += weight; nodeStats[b].supplier += weight; }
+    nodeStats[a].revenue += amount || 0;
+  };
+  (D.edges || []).forEach(e => {
+    if (e.ref_event_idx > max) return;
+    addPair(e.from, e.to, e.kind, 1, 0);
+  });
+  (D.marketTimeline || []).forEach(mt => {
+    if (mt.event_idx > max) return;
+    const k = keyFor(mt.vendor, mt.customer);
+    if (pairStats[k]) pairStats[k].revenue += mt.amount || 0;
+  });
+
+  const visiblePairs = Object.values(pairStats).filter(st => st.total >= minStrength);
+  const connectedToSelected = new Set();
+  if (selected) {
+    visiblePairs.forEach(st => {
+      if (st.a === selected || st.b === selected) {
+        connectedToSelected.add(st.a);
+        connectedToSelected.add(st.b);
+      }
+    });
+    connectedToSelected.add(selected);
+  }
+
+  // Draw edges
+  visiblePairs.sort((a,b) => a.total - b.total).forEach(st => {
+    const p1 = pos[st.a], p2 = pos[st.b];
+    if (!p1 || !p2) return;
+    const dx = p2.x - p1.x, dy = p2.y - p1.y;
+    const mx = (p1.x + p2.x) / 2 - dy * 0.04;
+    const my = (p1.y + p2.y) / 2 + dx * 0.04;
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.setAttribute('d', `M ${p1.x} ${p1.y} Q ${mx} ${my} ${p2.x} ${p2.y}`);
+    const cls = st.supplier ? 'pair_supplier' : (st.sales ? 'pair_sale' : 'pair_edge');
+    const dimmed = selected && st.a !== selected && st.b !== selected;
+    path.setAttribute('class', `net-edge ${cls}${dimmed ? ' dimmed' : ''}`);
+    path.setAttribute('stroke-width', Math.min(10, 1 + Math.log2(st.total + 1)));
+    path.setAttribute('title', `${networkLabel(st.a)} ↔ ${networkLabel(st.b)} · ${st.total}`);
+    svg.appendChild(path);
+  });
+
+  // Draw nodes
+  const drew = new Set();
+  Object.keys(pos).forEach(id => {
+    if (drew.has(id)) return;
+    drew.add(id);
+    const p = pos[id];
+    const a = (D.agents || []).find(x => x.id === id) || { role: id === 'world' ? 'world' : (id === 'supplier' || id === 'hayashi' ? 'supplier' : 'other'), id };
+    const ns = nodeStats[id] || {interactions:0,sales:0,revenue:0,supplier:0};
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    const nodeDimmed = selected && !connectedToSelected.has(id);
+    g.setAttribute('class', `net-node ${a.role || 'other'}${nodeDimmed ? ' dimmed' : ''}${selected === id ? ' selected' : ''}`);
+    g.setAttribute('transform', `translate(${p.x}, ${p.y})`);
+    g.style.cursor = 'pointer';
+    g.addEventListener('click', () => {
+      window._selectedNode = window._selectedNode === id ? null : id;
+      renderNetwork();
+    });
+    const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    c.setAttribute('r', Math.min(34, 10 + Math.sqrt(ns.interactions || 1) * 1.5));
+    g.appendChild(c);
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'net-label');
+    t.setAttribute('y', a.role === 'customer' ? 34 : -28);
+    t.setAttribute('text-anchor', 'middle');
+    t.textContent = networkLabel(id);
+    g.appendChild(t);
+    const sub = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    sub.setAttribute('class', 'net-label');
+    sub.setAttribute('y', a.role === 'customer' ? 48 : -14);
+    sub.setAttribute('text-anchor', 'middle');
+    sub.setAttribute('fill-opacity', '0.65');
+    sub.textContent = `${ns.interactions} links${ns.sales ? ' · '+ns.sales+' sales' : ''}`;
+    g.appendChild(sub);
+    svg.appendChild(g);
+  });
+
+  const readout = document.getElementById('network_readout');
+  if (readout) {
+    const rankedNodes = Object.entries(nodeStats)
+      .filter(([id]) => agentById(id).role !== 'world')
+      .sort((a,b) => b[1].interactions - a[1].interactions)
+      .slice(0, 5);
+    const rankedPairs = visiblePairs.sort((a,b) => b.total - a.total).slice(0, 10);
+    const focusPairs = selected ? visiblePairs
+      .filter(st => st.a === selected || st.b === selected)
+      .sort((a,b) => b.total - a.total)
+      .slice(0, 8) : [];
+    readout.innerHTML = `
+      ${selected ? `<div class="market-vendor"><div class="name">Focused agent</div>
+        <div class="ledger-mini">${escapeHtml(networkLabel(selected))}<br>${focusPairs.map(st => {
+          const other = st.a === selected ? st.b : st.a;
+          return `${escapeHtml(networkLabel(other))}: ${st.total} links${st.sales ? ', '+st.sales+' sales/deals' : ''}${st.revenue ? ', $'+st.revenue.toFixed(2) : ''}`;
+        }).join('<br>') || '<span class="empty">no ties above threshold</span>'}</div>
+      </div>` : ''}
+      <div class="market-vendor"><div class="name">Most central</div>
+        <div class="ledger-mini">${rankedNodes.map(([id,s]) => `${escapeHtml(networkLabel(id))}: ${s.interactions} links${s.sales ? ', '+s.sales+' sales/deals' : ''}`).join('<br>') || '<span class="empty">none yet</span>'}</div>
+      </div>
+      <div class="market-vendor"><div class="name">Strongest ties</div>
+        <div class="ledger-mini">${rankedPairs.map(st => `${escapeHtml(networkLabel(st.a))} ↔ ${escapeHtml(networkLabel(st.b))}: ${st.total}${st.revenue ? ', $'+st.revenue.toFixed(2) : ''}`).join('<br>') || '<span class="empty">none yet</span>'}</div>
+      </div>
+    `;
+  }
+}
+</script>
+</body>
+</html>

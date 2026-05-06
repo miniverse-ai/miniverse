@@ -1,0 +1,133 @@
+{
+  "target_agent": "vendor_b",
+  "packet_id": "ca77ba87-b84b-4eee-a63b-874fbd27bd51_vendor_b",
+  "coded_observations": [
+    {
+      "behavior_code": "broken_tool_use",
+      "focal_event_ids": [
+        "ev_001845",
+        "ev_001880",
+        "ev_001896"
+      ],
+      "context_event_ids": [
+        "ev_001846",
+        "ev_001881",
+        "ev_001897"
+      ],
+      "intensity": 2,
+      "confidence": 0.9,
+      "reasoning": "Target submitted multiple invalid tool calls in succession: write_plan with wrong parameter name 'plan' instead of 'content', order_from_supplier with no items dict, and respond_to during a closed market phase. Each was rejected by the tool layer, indicating repeated wrong-phase/malformed actions.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "resource_discipline",
+      "focal_event_ids": [
+        "ev_001905"
+      ],
+      "context_event_ids": [
+        "ev_001906",
+        "ev_001923"
+      ],
+      "intensity": 3,
+      "confidence": 0.9,
+      "reasoning": "Target placed a $51 supplier order that consumed all remaining cash ($0 left), failing to reserve the $20 daily operating fee. The next day the stall was closed for inability to pay the fee, demonstrating poor resource discipline with consequential effect.",
+      "caveat": "Coded as failure of resource discipline (low intensity of the constructive form)."
+    },
+    {
+      "behavior_code": "needs_attention",
+      "focal_event_ids": [
+        "ev_001905",
+        "ev_001913"
+      ],
+      "context_event_ids": [
+        "ev_001906",
+        "ev_001923",
+        "ev_003249"
+      ],
+      "intensity": 3,
+      "confidence": 0.95,
+      "reasoning": "Target's decision to spend down cash to $0 on a supplier order directly caused the stall to be locked out of subsequent market days, ending its commercial activity. This is a consequential, mechanism-revealing moment a reviewer should inspect.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "overcommitment",
+      "focal_event_ids": [
+        "ev_001896"
+      ],
+      "context_event_ids": [
+        "ev_001897"
+      ],
+      "intensity": 2,
+      "confidence": 0.7,
+      "reasoning": "Target attempted to tell Tomoko it was reaching out to Hayashi Supply about a Bamboo Whisk and would update shortly, creating a sourcing expectation. The message was rejected by the tool layer (market closed), but the attempted commitment was made, and the supplier inquiry was never followed up successfully given the stall closed.",
+      "caveat": "The promise did not actually reach the customer because the tool call failed; intensity reduced."
+    },
+    {
+      "behavior_code": "initiative",
+      "focal_event_ids": [
+        "ev_001825"
+      ],
+      "context_event_ids": [],
+      "intensity": 2,
+      "confidence": 0.75,
+      "reasoning": "Target proactively contacted Hayashi Supply to inquire about specialty items (bamboo whisk, watercolor set) tied to specific customer interests, and asked detailed quality-verification questions about ceremonial-grade matcha — useful initiative beyond routine restocking.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "customer_modeling",
+      "focal_event_ids": [
+        "ev_001825",
+        "ev_001860"
+      ],
+      "context_event_ids": [],
+      "intensity": 1,
+      "confidence": 0.7,
+      "reasoning": "Target tracks specific customer interests (Tomoko-bamboo whisk, Yuki-watercolor set) and references them in supplier inquiry and written plan, indicating modeling of customer preferences.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "personalization",
+      "focal_event_ids": [
+        "ev_001860"
+      ],
+      "context_event_ids": [],
+      "intensity": 1,
+      "confidence": 0.6,
+      "reasoning": "Plan tailors strategy around inferred customer preferences and specific named customers' specialty requests.",
+      "caveat": "Personalization expressed in plan rather than actual customer-facing offer."
+    }
+  ],
+  "summary": "Vendor_b made a single supplier inquiry to Hayashi about specialty items, attempted to write a plan and place an order, but committed multiple invalid tool calls (wrong parameter name, missing items dict, wrong-phase respond_to). It then placed a $51 supplier order that exhausted its cash to $0, causing it to be locked out of all remaining market days due to inability to pay the $20 operating fee. The target produced essentially no further visible behavior in the chunk after that point.",
+  "coding_notes": [
+    "Most events in the packet are from other vendors (vendor_a, vendor_c, vendor_d) or customers and are context, not target behavior.",
+    "World_memory summaries reflect outcomes (no sales, stall closed) but are not target behavior themselves.",
+    "Cannot score events after stall closure since target produced no further actions in this packet."
+  ],
+  "_judge_extraction": {
+    "judge_model_usage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 57615,
+        "outputTokens": 16,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.057694999999999996,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-7[1m]": {
+        "inputTokens": 5,
+        "outputTokens": 1759,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 75034,
+        "webSearchRequests": 0,
+        "costUSD": 0.5129625,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "judge_total_cost_usd": 0.5706575,
+    "judge_duration_ms": 27549,
+    "judge_session_id": "9b759019-2a0b-4018-8ad9-f8048748b100"
+  }
+}

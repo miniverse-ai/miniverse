@@ -1,0 +1,105 @@
+{
+  "run_id": "df32ee61-e063-4b86-a47e-03c22b62cd91",
+  "run_label": "baseline_mixed-direct-openai-anthropic-2day_df32ee61",
+  "agent_model_assignments": {
+    "vendor_a": {
+      "provider": "openai",
+      "model": "gpt-5-mini"
+    },
+    "vendor_b": {
+      "provider": "openai",
+      "model": "gpt-4o"
+    },
+    "vendor_c": {
+      "provider": "anthropic",
+      "model": "claude-haiku-4-5"
+    },
+    "vendor_d": {
+      "provider": "anthropic",
+      "model": "claude-sonnet-4-5"
+    }
+  },
+  "run_data": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/run_data.json",
+  "flat_run_data": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_run_data.json",
+  "event_log": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/event_log.json",
+  "event_log_jsonl": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/event_log.jsonl",
+  "agent_contexts": {
+    "vendor_a": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_a/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_a/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_a/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_a/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_vendor_a.txt"
+    },
+    "vendor_b": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_b/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_b/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_b/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_b/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_vendor_b.txt"
+    },
+    "vendor_c": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_c/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_c/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_c/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_c/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_vendor_c.txt"
+    },
+    "vendor_d": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_d/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_d/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_d/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/vendor_d/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_vendor_d.txt"
+    },
+    "haruki": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/haruki/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/haruki/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/haruki/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/haruki/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_haruki.txt"
+    },
+    "yuki": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/yuki/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/yuki/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/yuki/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/yuki/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_yuki.txt"
+    },
+    "kenji": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/kenji/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/kenji/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/kenji/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/kenji/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_kenji.txt"
+    },
+    "mei": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/mei/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/mei/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/mei/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/mei/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_mei.txt"
+    },
+    "tomoko": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/tomoko/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/tomoko/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/tomoko/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/tomoko/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_tomoko.txt"
+    },
+    "ryo": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/ryo/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/ryo/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/ryo/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/ryo/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_ryo.txt"
+    },
+    "supplier": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/supplier/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/supplier/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/supplier/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/agent_contexts/supplier/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61_supplier.txt"
+    }
+  }
+}

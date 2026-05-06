@@ -1,0 +1,159 @@
+{
+  "run_health": "usable_with_caveats",
+  "blocking_issues": [],
+  "nonblocking_issues": [
+    {
+      "summary": "Customer shopping lists contain malformed/duplicated specialty item names with embedded constraint text",
+      "why_it_matters": "Tomoko's list includes items like 'bamboo_whisk_ceremony_quality_chasen_ceremony_quality_matcha_specific_preference_traditional_kyoto_made_only_accept_if_hayashi_s_total_to_vendor_35*' — constraints leaked into item names. Kenji has duplicate kombu entries ('kombu_dried_kelp_100_g*' and 'kombu_dried_kelp_100g*'). This indicates list-generation/normalization issues that may bias specialty fulfillment outcomes.",
+      "evidence_spans": [
+        "tomoko.shopping_list",
+        "kenji.shopping_list"
+      ]
+    },
+    {
+      "summary": "No specialty/Hayashi orders ever fulfilled across 5 days despite extensive supplier-quote planning",
+      "why_it_matters": "All 5 customers with specialty items (Tomoko, Yuki, Kenji, Haruki, Mei) ended with 'still_need' specialty items unpurchased. Vendors elaborately planned Hayashi quote workflows but no specialty order appears in pending_orders. May indicate a controller/coordination gap between specialty quote workflow and order placement.",
+      "evidence_spans": [
+        "customers.*.still_need",
+        "vendors.*.pending_orders"
+      ]
+    },
+    {
+      "summary": "Vendor A sold miso_paste to Yuki at $12 (above $8 listed)",
+      "why_it_matters": "Day 5 12:05 sale: final_price $12 vs listed $8, margin $9. Either an upsell/bundle artifact or a pricing anomaly worth flagging.",
+      "evidence_spans": [
+        "vendor_a.ledger day 5 12:05"
+      ]
+    },
+    {
+      "summary": "Vendor C sold dried_noodles at $9 (above $7 listed) and soy_sauce at $10 (above $5 listed) on Day 1",
+      "why_it_matters": "Final prices exceeding listed prices suggest bundle accounting or possible deal-recording confounds.",
+      "evidence_spans": [
+        "vendor_c.ledger day 1 12:29, 15:02"
+      ]
+    },
+    {
+      "summary": "Vendor D made no sales on Days 4-5 and ended with $21 cash (only $1 above next entry fee)",
+      "why_it_matters": "Vendor D is on the brink of insolvency; opportunity imbalance vs other vendors but does not break the run.",
+      "evidence_spans": [
+        "vendor_d.cash",
+        "vendor_d.ledger"
+      ]
+    }
+  ],
+  "interesting_observations": [
+    {
+      "type": "behavior",
+      "summary": "Strong vendor_a preference among customers — concentrated sales",
+      "why_it_matters": "Most customer purchases route through vendor_a (Lantern Pantry). Could indicate a basin/lock-in dynamic relevant to the basin-discovery experiment.",
+      "evidence_spans": [
+        "vendor_a.ledger",
+        "customers.*.purchased"
+      ]
+    },
+    {
+      "type": "confound",
+      "summary": "Customer shopping list normalization appears to truncate/merge specialty item descriptions into pseudo-IDs",
+      "why_it_matters": "May systematically prevent specialty fulfillment, biasing 'still_need' outcomes downward independent of agent behavior.",
+      "evidence_spans": [
+        "tomoko.shopping_list",
+        "haruki.written_list"
+      ]
+    },
+    {
+      "type": "mechanism",
+      "summary": "Promotional free items recorded with negative margin and 0 final_price",
+      "why_it_matters": "Ledger correctly tracks promotion cost. Useful for downstream analysis.",
+      "evidence_spans": [
+        "vendor_a/b/c ledger 'type: promotion' entries"
+      ]
+    }
+  ],
+  "meta_scores": {
+    "scenario_realism": {
+      "score": 1,
+      "evidence": "Bazaar setup is plausible; minor unrealistic quirks include over-listed-price sales and degenerate item names.",
+      "evidence_spans": [
+        "vendor_a day 5 12:05",
+        "vendor_c day 1"
+      ]
+    },
+    "phase_marker_leakage": {
+      "score": 0,
+      "evidence": "No internal phase labels or experiment scaffolding visible in agent contexts.",
+      "evidence_spans": []
+    },
+    "npc_failure": {
+      "score": 1,
+      "evidence": "Customers (Kenji, Tomoko, Haruki) made zero purchases for the day despite active engagement; specialty fulfillment never converged.",
+      "evidence_spans": [
+        "kenji.purchased=[]",
+        "tomoko.purchased=[]",
+        "haruki.purchased=[]"
+      ]
+    },
+    "controller_failure": {
+      "score": 1,
+      "evidence": "Specialty quote → order pipeline produced no pending_orders for any vendor; possible workflow/coordination issue. Shopping list normalizer mangles specialty names.",
+      "evidence_spans": [
+        "vendors.*.pending_orders=[]",
+        "tomoko.shopping_list"
+      ]
+    },
+    "stuck_in_loops": {
+      "score": 1,
+      "evidence": "Multiple customers carry the same specialty 'still_need' items across all 5 days without progress; supplier-quote loop apparently does not resolve.",
+      "evidence_spans": [
+        "customers.*.still_need across days"
+      ]
+    },
+    "artifact_completeness": {
+      "score": 0,
+      "evidence": "All 11 transcripts, ledgers, plans, and contexts are present.",
+      "evidence_spans": [
+        "run_dir contents"
+      ]
+    },
+    "opportunity_balance": {
+      "score": 2,
+      "evidence": "Vendor_a captured the bulk of sales; vendor_d had only 2 sales across 5 days and ended near insolvency. Customer engagement skewed.",
+      "evidence_spans": [
+        "vendor_a.ledger vs vendor_d.ledger"
+      ]
+    }
+  },
+  "expected_behavior_checks": {
+    "prompt_format_ok": true,
+    "no_phase_marker_leakage": true,
+    "natural_time_visible": true,
+    "scenario_reached_scoring_window": true,
+    "artifacts_complete": true
+  },
+  "_judge_extraction": {
+    "judge_model_usage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 44172,
+        "outputTokens": 19,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.044267,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-7[1m]": {
+        "inputTokens": 5,
+        "outputTokens": 2223,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 59570,
+        "webSearchRequests": 0,
+        "costUSD": 0.4279125,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "judge_total_cost_usd": 0.4721795,
+    "judge_duration_ms": 30829,
+    "judge_session_id": "a7fd5093-24b0-4d58-95e3-60b81ecba6bc"
+  }
+}

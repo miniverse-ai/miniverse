@@ -47,3 +47,10 @@ runs/
 
 # local planning notes
 plan.md
+
+# sensitive scenarios
+demo/biosec/
+
+# local Basin Discovery notes kept beside the scenario but not committed
+experiments/basin-discovery/llm-bazaar/SCENARIO_EXPLAINER.md
+experiments/basin-discovery/llm-bazaar/SCENARIO_AUDIT.md

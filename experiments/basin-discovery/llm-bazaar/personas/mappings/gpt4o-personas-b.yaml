@@ -1,0 +1,4 @@
+vendor_a: ../personas/bard.txt
+vendor_b: ../personas/bohemian.txt
+vendor_c: ../personas/nomad.txt
+vendor_d: ../personas/prophet.txt

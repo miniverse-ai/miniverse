@@ -1,0 +1,258 @@
+# Kōen Market — Shared World State
+#
+# Wholesale catalog is shared knowledge between all vendors and the supplier.
+# Vendors set retail prices during planning based on these costs.
+# Specialty items (not in catalog) are sourced from supplier at improvised prices.
+
+# ── WHOLESALE CATALOG ──
+# Standard goods available from the supplier at these bulk prices.
+
+catalog:
+  # Food — staples and ingredients
+  rice:
+    name: "Short-grain Rice (2kg bag)"
+    wholesale: 4
+    category: food
+  miso_paste:
+    name: "Miso Paste (500g)"
+    wholesale: 3
+    category: food
+  dried_noodles:
+    name: "Dried Ramen Noodles (6-pack)"
+    wholesale: 3
+    category: food
+  soy_sauce:
+    name: "Soy Sauce (500ml)"
+    wholesale: 2
+    category: food
+  green_tea:
+    name: "Loose Leaf Green Tea (200g)"
+    wholesale: 5
+    category: food
+  dried_seaweed:
+    name: "Dried Seaweed Sheets (50-pack)"
+    wholesale: 3
+    category: food
+  pickled_ginger:
+    name: "Pickled Ginger (jar)"
+    wholesale: 2
+    category: food
+  sesame_oil:
+    name: "Toasted Sesame Oil (250ml)"
+    wholesale: 3
+    category: food
+  matcha:
+    name: "Matcha Powder (100g tin)"
+    wholesale: 8
+    category: food
+  umeboshi:
+    name: "Umeboshi Plums (jar)"
+    wholesale: 4
+    category: food
+
+  # Household items
+  incense:
+    name: "Sandalwood Incense (bundle of 30)"
+    wholesale: 3
+    category: household
+  candles:
+    name: "Beeswax Candles (set of 4)"
+    wholesale: 4
+    category: household
+  soap:
+    name: "Handmade Yuzu Soap (bar)"
+    wholesale: 2
+    category: household
+  ceramic_bowl:
+    name: "Ceramic Rice Bowl"
+    wholesale: 5
+    category: household
+  chopsticks:
+    name: "Lacquered Chopstick Set"
+    wholesale: 3
+    category: household
+  furoshiki:
+    name: "Furoshiki Wrapping Cloth"
+    wholesale: 4
+    category: household
+  tenugui:
+    name: "Tenugui Hand Towel"
+    wholesale: 3
+    category: household
+
+# ── VENDOR STARTING INVENTORIES ──
+# Each vendor starts with a different mix from the catalog.
+# Overlap on common items, some exclusives per vendor.
+
+vendor_inventory:
+  vendor_a:
+    starting_cash: 80
+    stock:
+      rice: 10
+      miso_paste: 8
+      soy_sauce: 10
+      dried_noodles: 8
+      sesame_oil: 6
+      soap: 8
+      chopsticks: 6
+  vendor_b:
+    starting_cash: 80
+    stock:
+      rice: 8
+      green_tea: 8
+      dried_seaweed: 10
+      pickled_ginger: 8
+      matcha: 4
+      ceramic_bowl: 6
+      incense: 8
+  vendor_c:
+    starting_cash: 80
+    stock:
+      dried_noodles: 10
+      soy_sauce: 8
+      umeboshi: 6
+      candles: 8
+      furoshiki: 5
+      tenugui: 6
+      sesame_oil: 6
+  vendor_d:
+    starting_cash: 80
+    stock:
+      rice: 8
+      miso_paste: 6
+      green_tea: 6
+      soap: 6
+      chopsticks: 8
+      dried_seaweed: 6
+      incense: 6
+
+# ── CUSTOMER CHARACTERS ──
+# Shopping lists reflect character and lifestyle.
+# Specialty items (marked with *) are NOT in the catalog —
+# vendors must source from the supplier.
+
+customers:
+  haruki:
+    name: "Haruki"
+    age: 32
+    background: >
+      Software engineer. Lives alone, cooks elaborate ramen on weekends.
+      Methodical shopper — compares prices, tracks what he pays. Quiet
+      but firm negotiator. Knows exactly what he wants.
+    budget: 60
+    shopping_list:
+      - dried_noodles
+      - miso_paste
+      - sesame_oil
+      - dried_seaweed
+      - "chashu_pork*"  # specialty — not in catalog
+    list_context: "Planning to make tonkotsu ramen after the next market day."
+
+  yuki:
+    name: "Yuki"
+    age: 27
+    background: >
+      Freelance illustrator. Buys on impulse, drawn to interesting or
+      beautiful things. Not price-sensitive — if she likes the vendor
+      she'll pay more. Chatty, asks about the story behind products.
+    budget: 55
+    shopping_list:
+      - matcha
+      - furoshiki
+      - incense
+      - "watercolor_set*"  # specialty
+    list_context: "Setting up a new workspace, wants it to feel inspiring."
+
+  kenji:
+    name: "Kenji"
+    age: 45
+    background: >
+      Retired salaryman turned home cook. Hosts weekly dinner parties.
+      Buys in bulk when the price is right, walks away when it's not.
+      Knows market prices cold — been shopping here for years.
+    budget: 80
+    shopping_list:
+      - rice
+      - soy_sauce
+      - green_tea
+      - pickled_ginger
+      - ceramic_bowl
+      - umeboshi
+    list_context: "Hosting 6 guests Saturday. Traditional meal."
+
+  mei:
+    name: "Mei"
+    age: 19
+    background: >
+      University student on a tight budget. Buys basics only. Will
+      haggle hard because she has to. Asks other shoppers for advice
+      on where to get deals. Shares price info openly.
+    budget: 35
+    shopping_list:
+      - rice
+      - dried_noodles
+      - soy_sauce
+      - soap
+    list_context: "Stocking up for the week. Need to stretch every dollar."
+
+  tomoko:
+    name: "Tomoko"
+    age: 58
+    background: >
+      Tea ceremony instructor. Extremely particular about quality.
+      Will pay premium for the right product but won't accept
+      anything substandard. Expects knowledgeable vendors. Judges
+      vendors by their expertise as much as their prices.
+    budget: 70
+    shopping_list:
+      - matcha
+      - green_tea
+      - ceramic_bowl
+      - chopsticks
+      - "bamboo_whisk*"  # specialty — tea ceremony tool
+    list_context: "Preparing for a private tea ceremony class next week."
+
+  ryo:
+    name: "Ryo"
+    age: 22
+    background: >
+      Aspiring chef, works part-time at a ramen shop. Buys ingredients
+      to practice at home. Knows food quality well but has limited
+      cash. Friendly and talkative — builds rapport with vendors
+      hoping for future discounts.
+    budget: 45
+    shopping_list:
+      - miso_paste
+      - sesame_oil
+      - dried_seaweed
+      - pickled_ginger
+      - soy_sauce
+    list_context: "Practicing a new miso ramen recipe."
+
+# ── CUSTOMER ARRIVAL WAVES ──
+# Wall-clock based: sim_minutes_after_open controls customer arrival
+# thresholds after the market opens. With real_minutes_per_sim_hour: 1
+# and an 8-hour market, the open-stall period lasts about 8 real minutes:
+#   wave 1 at sim 0 min    → 09:00
+#   wave 2 at sim 120 min  → 11:00
+#   wave 3 at sim 240 min  → 13:00
+# The afternoon remains available for negotiation and closing purchases.
+
+arrival_waves:
+  - sim_minutes_after_open: 0
+    customers: [haruki, kenji]
+  - sim_minutes_after_open: 120
+    customers: [mei, yuki]
+  - sim_minutes_after_open: 240
+    customers: [tomoko, ryo]
+
+# ── MARKET TIMING ──
+market:
+  start_date: "2026-10-11"
+  days_open: [Monday, Tuesday, Wednesday, Thursday, Friday]
+  open_hour: 9
+  close_hour: 17
+  real_minutes_per_sim_hour: 1
+  simulation_days: 5
+  daily_operating_fee: 20
+  planning_timeout_seconds: 300

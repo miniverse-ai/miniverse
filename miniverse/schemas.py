@@ -401,6 +401,22 @@ class AgentProfile(BaseModel):
     relationships: Dict[str, str] = Field(
         ..., description="Relationships with other agents {agent_id: description}"
     )
+    # Metadata stores prompt-rendering and scenario-specific profile data.
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Scenario-defined metadata for this agent profile"
+    )
+    # When True, agent sleeps on steps with no new events (messages, perception
+    # changes). Wakes on messages or every wake_interval steps. Useful for
+    # NPC/background agents that should be reactive rather than proactive.
+    sleep_when_idle: bool = Field(
+        default=False, description="Sleep on idle steps (reactive NPC mode)"
+    )
+    # Steps between periodic wake-ups when sleep_when_idle is True.
+    # 0 = messages only, never wake periodically (default).
+    # Set > 0 if you want the agent to periodically check tools even without messages.
+    wake_interval: int = Field(
+        default=0, description="Steps between periodic wakes (0 = messages only)"
+    )
 
 
 class AgentAction(BaseModel):
@@ -511,19 +527,33 @@ class StepOutput(BaseModel):
         None, description="Internal reasoning — chain of thought"
     )
     action: Optional[str] = Field(
-        None, description="Tool/action name to execute"
+        None,
+        description=(
+            "Tool/action name to execute. Set to null when no tool is needed, "
+            "including public-speech-only turns that use respond."
+        ),
     )
     target: Optional[str] = Field(
         None, description="Target of the action"
     )
-    parameters: Optional[Dict[str, Union[str, int, float, bool]]] = Field(
-        None, description="Action-specific parameters"
+    parameters: Optional[Dict[str, Any]] = Field(
+        None,
+        description=(
+            "Action-specific parameters. Values may be scalars, nested "
+            "dicts, or lists — scenarios that need structured params "
+            "(e.g. set_prices with a {item_id: price} map) require this."
+        ),
     )
     respond: Optional[str] = Field(
-        None, description="Text output — message to someone or general output"
+        None,
+        description=(
+            "Public text output. Use this for public speech, including turns "
+            "where action is null and the agent is only speaking. "
+            "Scenario-specific private messaging should use an action/tool when available."
+        ),
     )
     respond_to: Optional[str] = Field(
-        None, description="Recipient agent ID if respond is a directed message"
+        None, description="Legacy directed-recipient field. Do not use unless the active scenario explicitly asks for it."
     )
 
 

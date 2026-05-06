@@ -33,6 +33,11 @@ Required vars:
   - `rules.py`: deterministic town rules
   - `cognition.py`: valentines cognition policies
   - `run.sh`: verbose LLM run (fixed 15 ticks) + judge summary
+- `threshold/`
+  - `scenario.yaml`: transhumanist cyberpunk social-dynamics scenario
+  - `rules.py`: deterministic threshold rules
+  - `cognition.py`: threshold cognition policies
+  - `run.sh`: verbose LLM run (fixed 20 ticks) + judge summary
 
 ## Shared judge
 

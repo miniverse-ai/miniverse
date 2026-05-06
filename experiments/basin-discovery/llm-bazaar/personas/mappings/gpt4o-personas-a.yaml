@@ -1,0 +1,4 @@
+vendor_a: ../personas/functional-vendor.txt
+vendor_b: ../personas/aura.txt
+vendor_c: ../personas/trickster.txt
+vendor_d: ../personas/sage.txt
