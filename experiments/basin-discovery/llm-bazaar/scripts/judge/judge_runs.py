@@ -23,8 +23,8 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 MEASUREMENT_DIR = REPO_ROOT / "experiments" / "basin-discovery" / "llm-bazaar" / "measurement"
 BEHAVIOR_PROMPT = MEASUREMENT_DIR / "behavior-rubric-judge-prompt.md"
 HEALTH_PROMPT = MEASUREMENT_DIR / "run-health-judge-prompt.md"
-ROLEPLAY_PROMPT = MEASUREMENT_DIR / "roleplay-validation-prompt.md"
-CODING_SCHEMA = MEASUREMENT_DIR / "coding-schema.yaml"
+BEHAVIOR_RUBRIC = MEASUREMENT_DIR / "behavior-rubric.yaml"
+RUN_HEALTH_RUBRIC = MEASUREMENT_DIR / "run-health-rubric.yaml"
 JUDGE_CWD = Path("/tmp/basin-discovery-claude-judge-cwd")
 JUDGE_SYSTEM_PROMPT = """You are an independent research measurement judge.
 
@@ -204,10 +204,7 @@ def behavior_prompt(
     max_events_per_chunk: int | None = None,
     chunk_index: int | None = None,
 ) -> str:
-    schema = yaml.safe_load(CODING_SCHEMA.read_text())
-    rubric = {
-        "scenario_neutral_behavior_dimensions": schema.get("scenario_neutral_behavior_dimensions", {}),
-    }
+    rubric = yaml.safe_load(BEHAVIOR_RUBRIC.read_text())
     packet = build_packet(payload, target_agent, max_events_per_chunk=max_events_per_chunk)
     return render(
         BEHAVIOR_PROMPT.read_text(),
@@ -248,24 +245,10 @@ def health_prompt(payload: dict[str, Any]) -> str:
     }
     return render(
         HEALTH_PROMPT.read_text(),
+        rubric_yaml=yaml.safe_dump(yaml.safe_load(RUN_HEALTH_RUBRIC.read_text()), sort_keys=False),
         run_data_json=json.dumps(compact_run_data(payload), indent=2, default=str),
         agent_contexts=json.dumps(contexts, indent=2, default=str),
         scenario_artifacts=json.dumps(payload.get("scenario_artifacts", {}), indent=2, default=str),
-    )
-
-
-def roleplay_prompt(payload: dict[str, Any], target_agent: str) -> str:
-    persona_text = ""
-    persona_file = payload.get("persona_file")
-    if persona_file:
-        persona_path = Path(persona_file)
-        if not persona_path.is_absolute():
-            persona_path = REPO_ROOT / persona_path
-        persona_text = read_text(str(persona_path))
-    return render(
-        ROLEPLAY_PROMPT.read_text(),
-        persona_text=persona_text,
-        transcript=agent_context(payload, target_agent),
     )
 
 
@@ -406,7 +389,7 @@ def write_pass(
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run", type=Path, required=True, help="Run folder or run_data.json path")
-    parser.add_argument("--passes", default="behavior,health", help="Comma-separated: behavior,health,roleplay")
+    parser.add_argument("--passes", default="behavior,health", help="Comma-separated: behavior,health")
     parser.add_argument("--target-agent", action="append", default=[])
     parser.add_argument(
         "--judge-model",
@@ -457,17 +440,6 @@ def main() -> None:
                     max_events_per_chunk=args.max_events_per_chunk,
                     chunk_index=args.chunk_index,
                 ),
-                args.judge_model,
-                args.dry_run,
-                args.force,
-            )
-    if "roleplay" in passes:
-        for target in targets:
-            write_pass(
-                judgments_dir,
-                "roleplay",
-                target,
-                roleplay_prompt(payload, target),
                 args.judge_model,
                 args.dry_run,
                 args.force,

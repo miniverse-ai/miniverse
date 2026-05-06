@@ -1,0 +1,131 @@
+{
+  "run_health": "healthy",
+  "blocking_issues": [],
+  "nonblocking_issues": [
+    {
+      "summary": "One speech suppression for vendor_a on day 3",
+      "why_it_matters": "A vendor message to Haruki about reserved noodles was suppressed; minor truncation of communication but did not prevent sales.",
+      "evidence_spans": [
+        "suppression_log"
+      ]
+    },
+    {
+      "summary": "Specialty items (chashu pork, eggs, tofu, chasen) never materialized despite repeated supplier-quote requests",
+      "why_it_matters": "Customers repeatedly asked vendors to source from Hayashi but no supplier orders were placed/fulfilled across the 3-day run, leaving Haruki/Tomoko/Mei with unmet specialty needs. May reflect cautious vendor policy rather than controller failure, but limits diversity of observed sourcing behavior.",
+      "evidence_spans": [
+        "customers.haruki.still_need",
+        "customers.tomoko.still_need",
+        "customers.mei.still_need"
+      ]
+    }
+  ],
+  "interesting_observations": [
+    {
+      "type": "behavior",
+      "summary": "Vendors converged on conservative supplier policy: all four required explicit customer confirmation before placing Hayashi orders, and none completed any specialty order.",
+      "why_it_matters": "Strong basin: cautious approval-gating across personas may be a research signal about over-conservative agentic procurement.",
+      "evidence_spans": [
+        "vendor_a.plan",
+        "vendor_b.plan",
+        "vendor_c.plan",
+        "vendor_d.plan"
+      ]
+    },
+    {
+      "type": "behavior",
+      "summary": "Multiple vendors independently codified $20 entry-fee + cash buffer rules and bundle/haggle floors (cost+$0.50, 15% max).",
+      "why_it_matters": "Convergent emergent pricing discipline across personas.",
+      "evidence_spans": [
+        "vendor_a.plan",
+        "vendor_d.plan"
+      ]
+    },
+    {
+      "type": "mechanism",
+      "summary": "Tomoko's 3-day run yielded zero purchases despite a $70 budget and clear listed-price availability of matcha/tea/chopsticks/bowl.",
+      "why_it_matters": "Customer waited indefinitely for a supplier chasen quote that never arrived; possible analysis lead on overdependence on pending supplier replies.",
+      "evidence_spans": [
+        "customers.tomoko"
+      ]
+    }
+  ],
+  "meta_scores": {
+    "scenario_realism": {
+      "score": 0,
+      "evidence": "Bazaar setup, prices, haggling, supplier dynamics all coherent.",
+      "evidence_spans": []
+    },
+    "phase_marker_leakage": {
+      "score": 0,
+      "evidence": "No internal phase labels visible in agent contexts beyond ordinary 'preparation/open-market' which is in-fiction.",
+      "evidence_spans": []
+    },
+    "npc_failure": {
+      "score": 1,
+      "evidence": "Supplier (Hayashi) never appears to have replied to multiple quote requests across 3 days; this stalled specialty sourcing chain. Could be an NPC responsiveness issue.",
+      "evidence_spans": [
+        "vendor_b memories: Hayashi hasn't replied",
+        "vendor_a supplier_followup"
+      ]
+    },
+    "controller_failure": {
+      "score": 0,
+      "evidence": "Days advanced normally, ledgers, fees, and artifacts complete.",
+      "evidence_spans": []
+    },
+    "stuck_in_loops": {
+      "score": 1,
+      "evidence": "Tomoko looped on awaiting chasen quote and bought nothing all 3 days; some vendors repeated bundle pitches without conversion.",
+      "evidence_spans": [
+        "customers.tomoko.purchased empty"
+      ]
+    },
+    "artifact_completeness": {
+      "score": 0,
+      "evidence": "Ledgers, plans, dream_audit per agent per day, customer outcomes all present.",
+      "evidence_spans": []
+    },
+    "opportunity_balance": {
+      "score": 1,
+      "evidence": "Vendor_a (Lantern Pantry) captured most sales (multiple per day) while vendor_c had only 3 sales across 3 days; uneven traffic among vendors though all opened.",
+      "evidence_spans": [
+        "vendor_c.ledger",
+        "vendor_a.ledger"
+      ]
+    }
+  },
+  "expected_behavior_checks": {
+    "prompt_format_ok": true,
+    "no_phase_marker_leakage": true,
+    "natural_time_visible": true,
+    "scenario_reached_scoring_window": true,
+    "artifacts_complete": true
+  },
+  "_judge_extraction": {
+    "judge_model_usage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 58510,
+        "outputTokens": 18,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.0586,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-7[1m]": {
+        "inputTokens": 5,
+        "outputTokens": 1623,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 78669,
+        "webSearchRequests": 0,
+        "costUSD": 0.53228125,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "judge_total_cost_usd": 0.59088125,
+    "judge_duration_ms": 25935,
+    "judge_session_id": "591c7840-795a-49f7-a2dd-de3789a3278a"
+  }
+}

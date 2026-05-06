@@ -175,6 +175,14 @@ def classify_event(ev: dict, agents: dict[str, dict]) -> tuple[str, str | None]:
             return "deal_accept", target
         if action in ("order_from_supplier", "place_supplier_order"):
             return "supplier_order", "supplier"
+        if action == "private_message":
+            tgt = target or params.get("__target")
+            if tgt and isinstance(tgt, str):
+                rid = tgt.lower()
+                if rid in SUPPLIER_IDS or "hayashi" in rid:
+                    return "supplier_speech", tgt
+                return "private_speech", tgt
+            return "private_speech", None
         if action == "respond_to":
             tgt = target or params.get("__target")
             if tgt and isinstance(tgt, str):
@@ -192,6 +200,18 @@ def classify_event(ev: dict, agents: dict[str, dict]) -> tuple[str, str | None]:
             return "error", target
         if SALE_RE.search(content):
             return "sale", target
+        if action == "make_offer":
+            return "deal_offer", target
+        if action == "private_message":
+            tgt = target or params.get("__target")
+            if tgt and isinstance(tgt, str):
+                rid = tgt.lower()
+                if rid in SUPPLIER_IDS or "hayashi" in rid:
+                    return "supplier_speech", tgt
+                return "private_speech", tgt
+            return "private_speech", None
+        if action in ("order_from_supplier", "place_supplier_order"):
+            return "supplier_order", "supplier"
         return "tool", target
 
     if t == "action":
@@ -231,6 +251,89 @@ SHOP_NAMES = {
     "vendor_c": "Canopy Goods",
     "vendor_d": "Market General",
 }
+
+
+def resolve_agent_ref(ref: Any, agents: dict[str, dict]) -> str | None:
+    if not isinstance(ref, str) or not ref.strip():
+        return None
+    raw = ref.strip()
+    low = raw.lower()
+    if low in SUPPLIER_IDS or "hayashi" in low:
+        return "supplier" if "supplier" in agents else raw
+    if raw in agents:
+        return raw
+    if low in agents:
+        return low
+    for aid, agent in agents.items():
+        if aid.lower() == low:
+            return aid
+        if str(agent.get("display_name") or "").lower() == low:
+            return aid
+        if str(agent.get("shop_name") or "").lower() == low:
+            return aid
+    for aid, shop in SHOP_NAMES.items():
+        if shop.lower() == low:
+            return aid
+    return None
+
+
+def compact_json(value: Any) -> str:
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except TypeError:
+        return str(value)
+
+
+def format_event_body(ev: dict) -> str:
+    """Build the full reader-facing event body.
+
+    Raw tool-request events often store the action name in content and put the
+    meaningful payload in parameters. The viewer needs both: compact summaries
+    for scanning, but full payloads for transcript audit.
+    """
+    content = ev.get("content")
+    action = ev.get("action") or (content if ev.get("type") == "action_requested" else None)
+    params = ev.get("parameters")
+    state_updates = ev.get("state_updates")
+    lines: list[str] = []
+
+    if ev.get("type") == "action_requested":
+        lines.append(f"action: {action or content or 'unknown'}")
+        if ev.get("target"):
+            lines.append(f"target: {ev.get('target')}")
+        if isinstance(params, dict) and params:
+            # Surface conversational payloads first because they are what a
+            # researcher usually wants to inspect.
+            if params.get("message"):
+                lines.append(f"message: {params.get('message')}")
+            if params.get("__respond"):
+                lines.append(f"respond: {params.get('__respond')}")
+            visible_params = {k: v for k, v in params.items() if k not in {"message", "__respond"}}
+            if visible_params:
+                lines.append(f"parameters: {compact_json(visible_params)}")
+        elif params not in (None, {}, []):
+            lines.append(f"parameters: {compact_json(params)}")
+        return "\n".join(lines)
+
+    if content:
+        lines.append(str(content))
+    elif action:
+        lines.append(f"action: {action}")
+
+    if isinstance(params, dict) and params:
+        if params.get("message") and str(params.get("message")) not in "\n".join(lines):
+            lines.append(f"message: {params.get('message')}")
+        if params.get("__respond") and str(params.get("__respond")) not in "\n".join(lines):
+            lines.append(f"respond: {params.get('__respond')}")
+        visible_params = {k: v for k, v in params.items() if k not in {"message", "__respond"}}
+        if visible_params:
+            lines.append(f"parameters: {compact_json(visible_params)}")
+    elif params not in (None, {}, []):
+        lines.append(f"parameters: {compact_json(params)}")
+
+    if isinstance(state_updates, dict) and state_updates:
+        lines.append(f"state_updates: {compact_json(state_updates)}")
+    return "\n".join(lines).strip()
 
 
 def build_agent_registry(run_data: dict | None, events: list[dict]) -> dict[str, dict]:
@@ -345,10 +448,13 @@ def derive_edges_and_market(
         ch = ev["channel"]
         aid = ev["agent_id"]
         target = ev.get("target")
+        target_id = ev.get("target_id")
 
         # normalize target to agent id if possible
         norm_target = None
-        if isinstance(target, str):
+        if target_id:
+            norm_target = target_id
+        elif isinstance(target, str):
             tl = target.lower()
             if tl in agents:
                 norm_target = tl
@@ -432,16 +538,22 @@ def normalize_events(
         ts = ev.get("timestamp")
         sim_iso = parse_sim_ts(ts)
         ch, deriv_target = classify_event(ev, agents)
+        target_raw = ev.get("target") or deriv_target
+        target_id = resolve_agent_ref(target_raw, agents)
         normalized = {
             "idx": new_idx,
+            "event_id": f"ev_{orig_idx:06d}",
+            "event_index": orig_idx,
             "ts": ts,
             "sim_ts_iso": sim_iso,
             "type": ev.get("type"),
             "agent_id": ev.get("agent_id"),
             "step": ev.get("step"),
-            "target": ev.get("target") or deriv_target,
+            "target": target_raw,
+            "target_id": target_id,
             "action": ev.get("action") or (ev.get("content") if ev.get("type") == "action_requested" else None),
-            "content": ev.get("content"),
+            "content": format_event_body(ev),
+            "raw_content": ev.get("content"),
             "parameters": ev.get("parameters"),
             "success": ev.get("success", True),
             "channel": ch,
@@ -631,6 +743,8 @@ def load_clean_judgments(cj_dir: Path) -> tuple[dict[str, dict], dict | None]:
     for f in cj_dir.glob("*.json"):
         if f.name.startswith("_"):
             continue
+        if f.name.endswith("_citations.json"):
+            continue
         try:
             obj = json.loads(f.read_text())
         except Exception:
@@ -638,16 +752,71 @@ def load_clean_judgments(cj_dir: Path) -> tuple[dict[str, dict], dict | None]:
         if f.stem == "run_health":
             run_health = obj
             continue
-        target = obj.get("target_agent") or f.stem.replace("_behavior", "")
-        judgments[target] = {
-            "summary": obj.get("summary"),
-            "scores": obj.get("scores", {}),
-            "highlights": obj.get("highlights", []),
-            "coding_notes": obj.get("coding_notes"),
-            "scenario": obj.get("scenario"),
-            "_source": str(f),
-        }
+        target = obj.get("target_agent") or re.sub(r"_behavior(?:_chunk\d+)?$", "", f.stem)
+        current = judgments.setdefault(
+            target,
+            {
+                "summary": None,
+                "scores": {},
+                "highlights": [],
+                "incidents": [],
+                "coded_observations": [],
+                "coding_notes": [],
+                "scenario": obj.get("scenario"),
+                "_sources": [],
+            },
+        )
+        current["summary"] = current.get("summary") or obj.get("summary")
+        merge_scores(current["scores"], obj.get("scores", {}))
+        current["highlights"].extend(obj.get("highlights", []) or [])
+        current["incidents"].extend(obj.get("incidents", []) or [])
+        current["coded_observations"].extend(obj.get("coded_observations", []) or [])
+        notes = obj.get("coding_notes")
+        if isinstance(notes, list):
+            current["coding_notes"].extend(notes)
+        elif notes:
+            current["coding_notes"].append(str(notes))
+        current["_sources"].append(str(f))
+        current["_source"] = str(f)
     return judgments, run_health
+
+
+def merge_scores(dst: dict[str, dict], src: dict[str, Any]) -> None:
+    for key, score in (src or {}).items():
+        if not isinstance(score, dict):
+            continue
+        cur = dst.setdefault(
+            key,
+            {
+                "presence": False,
+                "intensity": 0,
+                "incident_count": 0,
+                "confidence": 0,
+                "evidence": "",
+                "evidence_spans": [],
+                "caveat": "",
+            },
+        )
+        cur["presence"] = bool(cur.get("presence")) or bool(score.get("presence"))
+        cur["intensity"] = max(Number(cur.get("intensity")), Number(score.get("intensity")))
+        cur["incident_count"] = Number(cur.get("incident_count")) + Number(score.get("incident_count"))
+        cur["confidence"] = max(Number(cur.get("confidence")), Number(score.get("confidence")))
+        if not cur.get("onset_event_id"):
+            cur["onset_event_id"] = score.get("onset_event_id")
+        if score.get("evidence"):
+            cur["evidence"] = (cur.get("evidence") + " " + str(score.get("evidence"))).strip()
+        cur["evidence_spans"].extend(score.get("evidence_spans", []) or [])
+        if score.get("caveat"):
+            cur["caveat"] = (cur.get("caveat") + " " + str(score.get("caveat"))).strip()
+
+
+def Number(value: Any) -> float:
+    try:
+        if value is None or value == "":
+            return 0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def find_metrics_csv(
@@ -717,6 +886,7 @@ def build_viewer_data(
     metrics_csv_override: Path | None,
     judgments_dir_override: Path | None,
     title: str | None,
+    include_transcript_index: bool = False,
 ) -> dict:
     run_data: dict | None = None
     if rp.run_data_path:
@@ -725,7 +895,7 @@ def build_viewer_data(
     raw_event_pairs: list[tuple[int, dict, int]] = []
     source_path = ""
     if rp.event_log_jsonl:
-        source_path = str(rp.event_log_jsonl)
+        source_path = os.path.relpath(rp.event_log_jsonl, Path.cwd())
         for line_no, ev in iter_event_log(rp.event_log_jsonl):
             raw_event_pairs.append((len(raw_event_pairs), ev, line_no))
 
@@ -774,6 +944,22 @@ def build_viewer_data(
     if judgments_dir_override:
         cj_dir_used = judgments_dir_override
         judgments, run_health = load_clean_judgments(judgments_dir_override)
+    elif rp.inline_judgments_dir:
+        preferred = rp.inline_judgments_dir / "judge-v2-incidents-full"
+        candidates = [preferred] if preferred.is_dir() else []
+        candidates.extend(
+            sorted(
+                [d for d in rp.inline_judgments_dir.iterdir() if d.is_dir() and d not in candidates],
+                key=lambda d: d.stat().st_mtime,
+                reverse=True,
+            )
+        )
+        for candidate in candidates:
+            loaded, loaded_health = load_clean_judgments(candidate)
+            if loaded:
+                cj_dir_used = candidate
+                judgments, run_health = loaded, loaded_health
+                break
     elif analysis_dir:
         cj = find_clean_judgments_dir(analysis_dir, rp.run_id, rp.label)
         if cj:
@@ -796,10 +982,10 @@ def build_viewer_data(
         else:
             metrics = load_metrics_csv(metrics_csv_override, None)
 
-    # Transcript lookup info (paths only, viewer can fetch on demand or we
-    # inline truncated transcripts? — we just record the paths.)
+    # Transcript lookup info is optional because raw agent_contexts are bulky
+    # and usually not committed with curated viewer artifacts.
     transcripts_index: dict[str, dict[str, str]] = {}
-    if rp.agent_contexts_dir:
+    if include_transcript_index and rp.agent_contexts_dir:
         for d in rp.agent_contexts_dir.iterdir():
             if not d.is_dir():
                 continue
@@ -807,11 +993,12 @@ def build_viewer_data(
             for fname in ("system_prompt.txt", "current_context.txt", "full_context.txt", "combined.txt"):
                 fp = d / fname
                 if fp.exists():
-                    entry[fname.replace(".txt", "")] = str(fp)
+                    entry[fname.replace(".txt", "")] = os.path.relpath(fp, Path.cwd())
             if entry:
                 transcripts_index[d.name] = entry
-    for aid, fp in rp.flat_transcripts.items():
-        transcripts_index.setdefault(aid, {})["flat"] = str(fp)
+    if include_transcript_index:
+        for aid, fp in rp.flat_transcripts.items():
+            transcripts_index.setdefault(aid, {})["flat"] = os.path.relpath(fp, Path.cwd())
 
     meta = {
         "run_id": (run_data or {}).get("run_id") or rp.run_id,
@@ -824,7 +1011,7 @@ def build_viewer_data(
         "status": (run_data or {}).get("status"),
         "completion_reason": ((run_data or {}).get("scenario_artifacts") or {}).get("market_economics", {}).get("completion_reason"),
         "simulation_days": ((run_data or {}).get("scenario_artifacts") or {}).get("market_economics", {}).get("simulation_days"),
-        "source_run_dir": str(rp.run_dir),
+        "source_run_dir": os.path.relpath(rp.run_dir, Path.cwd()),
         "title": title or rp.label or "Bazaar Run",
         "time_bounds": time_bounds,
         "day_boundaries": day_boundaries,
@@ -882,6 +1069,11 @@ def main(argv: list[str]) -> int:
     p.add_argument("--out", default=None, help="Output HTML path (default: <run_dir>/viewer.html)")
     p.add_argument("--data-out", default=None, help="Optional sidecar viewer_data.json path")
     p.add_argument("--title", default=None)
+    p.add_argument(
+        "--include-transcript-index",
+        action="store_true",
+        help="Include local agent_contexts transcript paths in viewer_data. Off by default for portable curated artifacts.",
+    )
     args = p.parse_args(argv)
 
     rp = resolve_run(args.run)
@@ -889,7 +1081,14 @@ def main(argv: list[str]) -> int:
     metrics_csv = Path(args.metrics_csv).expanduser().resolve() if args.metrics_csv else None
     judgments_dir = Path(args.judgments_dir).expanduser().resolve() if args.judgments_dir else None
 
-    viewer_data = build_viewer_data(rp, analysis_dir, metrics_csv, judgments_dir, args.title)
+    viewer_data = build_viewer_data(
+        rp,
+        analysis_dir,
+        metrics_csv,
+        judgments_dir,
+        args.title,
+        include_transcript_index=args.include_transcript_index,
+    )
 
     if not TEMPLATE_PATH.exists():
         raise SystemExit(f"viewer template missing: {TEMPLATE_PATH}")

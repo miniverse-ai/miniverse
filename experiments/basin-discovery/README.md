@@ -23,6 +23,35 @@ Source-of-truth research context:
 
 Raw run outputs under `llm-bazaar/outputs/` and logs under `test-runs/` are ignored by default unless intentionally curated.
 
+## Open The Curated Viewer
+
+This branch includes one curated result artifact: a 3-session GPT-5-mini persona run with dream-memory enabled.
+
+From `/Users/kenneth/Desktop/lab/projects/research/miniverse`:
+
+```bash
+open experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html
+```
+
+If your browser blocks local sidecar JSON loading from `file://`, serve the repo locally:
+
+```bash
+python -m http.server 8765
+open http://localhost:8765/experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html
+```
+
+To regenerate the viewer from the committed compact run data and atomic judgments:
+
+```bash
+uv run python experiments/basin-discovery/llm-bazaar/scripts/viewer/render.py \
+  --run experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b \
+  --judgments-dir experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/judgments/judge-atomic-observations-20260506 \
+  --out experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html \
+  --data-out experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer_data.json
+```
+
+The committed run intentionally omits bulky `agent_contexts/` exports. The viewer is backed by `run_data.json`, the atomic judgment JSON files, metric CSVs, and `viewer_data.json`.
+
 ## Run A Bazaar Simulation
 
 From `/Users/kenneth/Desktop/lab/projects/research/miniverse`:
@@ -112,7 +141,7 @@ uv run python experiments/basin-discovery/llm-bazaar/scripts/judge/hydrate_judgm
 ```bash
 uv run python experiments/basin-discovery/llm-bazaar/scripts/viewer/render.py \
   --run experiments/basin-discovery/llm-bazaar/outputs/<run_dir_or_run_data.json> \
-  --analysis-dir experiments/basin-discovery/llm-bazaar/outputs/<run>/judgments/judge-v2-indexed \
+  --judgments-dir experiments/basin-discovery/llm-bazaar/outputs/<run>/judgments/<judgment_set> \
   --out experiments/basin-discovery/llm-bazaar/outputs/<run>/viewer.html
 ```
 

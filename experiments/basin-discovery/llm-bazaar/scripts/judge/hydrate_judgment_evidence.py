@@ -19,10 +19,32 @@ def hydrate_span(span: dict[str, Any], events: dict[str, str]) -> None:
     span["quote_exact"] = bool(hint and hint in event_text)
 
 
+def hydrate_incident(incident: dict[str, Any], events: dict[str, str]) -> None:
+    focal_event_id = incident.get("focal_event_id")
+    incident["focal_event_text"] = events.get(focal_event_id, "")
+    incident["context_events"] = [
+        {"event_id": event_id, "event_text": events.get(event_id, "")}
+        for event_id in incident.get("context_event_ids", []) or []
+    ]
+
+
 def hydrate_judgment(judgment: dict[str, Any], events: dict[str, str]) -> None:
+    for item in judgment.get("coded_observations", []) or []:
+        if isinstance(item, dict):
+            item["focal_events"] = [
+                {"event_id": event_id, "event_text": events.get(event_id, "")}
+                for event_id in item.get("focal_event_ids", []) or []
+            ]
+            item["context_events"] = [
+                {"event_id": event_id, "event_text": events.get(event_id, "")}
+                for event_id in item.get("context_event_ids", []) or []
+            ]
     for item in judgment.get("highlights", []) or []:
         if isinstance(item, dict):
             hydrate_span(item, events)
+    for item in judgment.get("incidents", []) or []:
+        if isinstance(item, dict):
+            hydrate_incident(item, events)
     for score in (judgment.get("scores") or {}).values():
         if not isinstance(score, dict):
             continue

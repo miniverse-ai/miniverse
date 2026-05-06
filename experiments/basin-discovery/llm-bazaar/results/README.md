@@ -8,8 +8,9 @@ Tracked files should be stable analysis artifacts. Scratch exports named
 
 Current curated set:
 
-- `bazaar-gpt5mini-baseline-81f92e6e-*` - GPT-5-mini neutral baseline.
-- `bazaar-mixed-2day-df32ee61-*` - mixed-model compact run.
-- `bazaar-gpt4o-personas-a-ca77ba87-final-*` - GPT-4o persona sweep run.
+- `gpt5mini-memory-3day-cef3f66b-*` - GPT-5-mini persona run with dream-memory enabled; matches the committed viewer artifact under `llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/`.
 
--- Shoshin | 2026-05-05
+Other result sets should be regenerated and reviewed before they are added back
+to this curated branch.
+
+-- Shoshin | 2026-05-06
