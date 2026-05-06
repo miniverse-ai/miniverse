@@ -143,17 +143,24 @@
   .event-list { font-size: 11.5px; flex: 1; overflow: auto; }
   .ev {
     padding: 4px 6px; border-bottom: 1px solid #1a1f27; cursor: pointer;
-    display: grid; grid-template-columns: 70px minmax(150px, 180px) 78px 1fr; gap: 8px;
+    display: grid; grid-template-columns: 62px minmax(170px, 230px) minmax(0, 1fr); gap: 8px;
     align-items: start;
+  }
+  main:not(.thread-collapsed) .ev {
+    grid-template-columns: 62px minmax(145px, 170px) minmax(0, 1fr);
   }
   .ev:hover { background: var(--bg-3); }
   .ev.selected { background: #1d2733; }
   .ev .ts { color: var(--fg-dim); font-variant-numeric: tabular-nums; }
-  .ev .agent { color: var(--fg); font-weight: 600; }
+  .ev .agent-meta { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .ev .agent { color: var(--fg); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ev .ch { font-size: 10px; padding: 1px 5px; border-radius: 3px; align-self: start; }
   .ev .content {
     color: var(--fg); white-space: pre-wrap; overflow: visible; text-overflow: clip;
     overflow-wrap: anywhere; line-height: 1.35;
+  }
+  main:not(.thread-collapsed) .ev .content {
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ch.public_speech { background: rgba(88,166,255,0.18); color: var(--public); }
   .ch.private_speech { background: rgba(188,140,255,0.18); color: var(--private); }
@@ -572,11 +579,7 @@ function hydrate(D) {
   document.getElementById('search').addEventListener('input', renderEventList);
   const toggleThread = document.getElementById('toggle_thread');
   if (toggleThread) {
-    toggleThread.addEventListener('click', () => {
-      const activity = document.getElementById('activity_tab');
-      const collapsed = activity.classList.toggle('thread-collapsed');
-      toggleThread.textContent = collapsed ? 'open' : 'collapse';
-    });
+    toggleThread.addEventListener('click', () => toggleThreadPanel());
   }
   ['net_sales','net_speech','net_supplier','net_public','net_min_strength'].forEach(id => {
     const el = document.getElementById(id);
@@ -935,8 +938,7 @@ function renderEventList() {
     const ts = (e.sim_ts_iso || e.ts || '').replace('T',' ').slice(5,16);
     div.innerHTML = `
       <span class="ts">${ts}</span>
-      <span class="agent">${escapeHtml(agentLabel(e.agent_id))}</span>
-      <span class="ch ${e.channel}">${shortChannel(e.channel)}</span>
+      <span class="agent-meta"><span class="agent">${escapeHtml(agentLabel(e.agent_id))}</span><span class="ch ${e.channel}">${shortChannel(e.channel)}</span></span>
       <span class="content">${escapeHtml(eventSummary(e))}</span>
     `;
     div.onclick = () => focusEvent(e.idx);
@@ -1007,8 +1009,22 @@ function escapeHtml(s) {
 }
 
 let _focusIdx = null;
+function isThreadCollapsed() {
+  return document.getElementById('activity_tab')?.classList.contains('thread-collapsed');
+}
+
+function toggleThreadPanel(forceOpen=null) {
+  const activity = document.getElementById('activity_tab');
+  const toggleThread = document.getElementById('toggle_thread');
+  if (!activity || !toggleThread) return;
+  const shouldCollapse = forceOpen === null ? !isThreadCollapsed() : !forceOpen;
+  activity.classList.toggle('thread-collapsed', shouldCollapse);
+  toggleThread.textContent = shouldCollapse ? 'open' : 'collapse';
+}
+
 function focusEvent(idx) {
   _focusIdx = idx;
+  toggleThreadPanel(true);
   // highlight in list
   document.querySelectorAll('.ev').forEach(d => d.classList.toggle('selected', parseInt(d.dataset.idx,10) === idx));
   const selected = document.querySelector(`.ev[data-idx="${idx}"]`);
