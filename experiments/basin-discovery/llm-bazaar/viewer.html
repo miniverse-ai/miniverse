@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>LLM Bazaar Results Viewer</title>
+<style>
+  :root {
+    --bg: #0e1116;
+    --panel: #161b22;
+    --panel-2: #1f2630;
+    --fg: #d8dee9;
+    --muted: #8b949e;
+    --border: #30363d;
+    --accent: #58a6ff;
+  }
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+  }
+  body {
+    display: grid;
+    grid-template-rows: auto 1fr;
+  }
+  header {
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) minmax(320px, 520px);
+    gap: 18px;
+    align-items: center;
+    padding: 12px 14px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  h1 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    line-height: 1.2;
+  }
+  .subtitle {
+    color: var(--muted);
+    line-height: 1.35;
+  }
+  .controls {
+    display: grid;
+    gap: 6px;
+  }
+  label {
+    color: var(--muted);
+    font-size: 11px;
+  }
+  select {
+    width: 100%;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--fg);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+  }
+  .meta {
+    color: var(--muted);
+    line-height: 1.35;
+    min-height: 16px;
+  }
+  .meta b {
+    color: var(--fg);
+  }
+  iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    background: var(--bg);
+  }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>LLM Bazaar Results Viewer</h1>
+    <div class="subtitle">Curated Basin Discovery runs used in the presentation. Select a run to inspect transcripts, state, network activity, and judge-coded behavior.</div>
+  </div>
+  <div class="controls">
+    <label for="run_select">Run</label>
+    <select id="run_select"></select>
+    <div class="meta" id="run_meta"></div>
+  </div>
+</header>
+<iframe id="viewer_frame" title="Selected LLM Bazaar run"></iframe>
+<script>
+const RUNS = [
+  {
+    label: "Baseline — GPT-5-mini neutral vendors",
+    path: "outputs/baseline_gpt-5-mini_81f92e6e/viewer.html",
+    meta: "5 sessions · neutral vendor role · atomic judge rescore"
+  },
+  {
+    label: "Experiment 1 — mixed models, neutral role",
+    path: "outputs/baseline_mixed-direct-openai-anthropic-2day_df32ee61/viewer.html",
+    meta: "2 sessions · GPT-5-mini, GPT-4o, Claude Haiku 4.5, Claude Sonnet 4.5"
+  },
+  {
+    label: "Experiment 2 — GPT-4o persona sweep",
+    path: "outputs/gpt4o-personas-a_gpt4o-vendor-personas-a-5day_ca77ba87/viewer.html",
+    meta: "5 sessions · Functional, Aura, Trix, Sage"
+  }
+];
+
+const select = document.getElementById("run_select");
+const frame = document.getElementById("viewer_frame");
+const meta = document.getElementById("run_meta");
+
+for (const [idx, run] of RUNS.entries()) {
+  const opt = document.createElement("option");
+  opt.value = String(idx);
+  opt.textContent = run.label;
+  select.appendChild(opt);
+}
+
+function loadRun(idx) {
+  const run = RUNS[idx] || RUNS[0];
+  frame.src = run.path;
+  meta.innerHTML = `<b>${run.label}</b> · ${run.meta}`;
+  const url = new URL(window.location.href);
+  url.searchParams.set("run", String(idx));
+  window.history.replaceState(null, "", url);
+}
+
+select.addEventListener("change", () => loadRun(Number(select.value)));
+
+const requested = Number(new URLSearchParams(window.location.search).get("run"));
+select.value = Number.isInteger(requested) && RUNS[requested] ? String(requested) : "0";
+loadRun(Number(select.value));
+</script>
+</body>
+</html>

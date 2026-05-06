@@ -8,9 +8,12 @@ Tracked files should be stable analysis artifacts. Scratch exports named
 
 Current curated set:
 
-- `gpt5mini-memory-3day-cef3f66b-*` - GPT-5-mini persona run with dream-memory enabled; matches the committed viewer artifact under `llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/`.
+- `baseline_gpt-5-mini_81f92e6e` - neutral GPT-5-mini baseline.
+- `baseline_mixed-direct-openai-anthropic-2day_df32ee61` - mixed-model neutral-role run.
+- `gpt4o-personas-a_gpt4o-vendor-personas-a-5day_ca77ba87` - GPT-4o persona sweep.
 
-Other result sets should be regenerated and reviewed before they are added back
-to this curated branch.
+These match the committed viewer artifacts under `llm-bazaar/outputs/` and
+the selector at `llm-bazaar/viewer.html`. Other result sets should be
+regenerated and reviewed before they are added back to this curated branch.
 
 -- Shoshin | 2026-05-06

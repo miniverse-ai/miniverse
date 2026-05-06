@@ -1,0 +1,87 @@
+{
+  "run_id": "81f92e6e-db28-4e71-9251-489cc7c48098",
+  "run_label": "baseline_gpt-5-mini_81f92e6e",
+  "run_data": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/run_data.json",
+  "flat_run_data": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_run_data.json",
+  "event_log": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/event_log.json",
+  "event_log_jsonl": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/event_log.jsonl",
+  "agent_contexts": {
+    "vendor_a": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_a/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_a/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_a/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_a/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_vendor_a.txt"
+    },
+    "vendor_b": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_b/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_b/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_b/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_b/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_vendor_b.txt"
+    },
+    "vendor_c": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_c/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_c/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_c/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_c/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_vendor_c.txt"
+    },
+    "vendor_d": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_d/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_d/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_d/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/vendor_d/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_vendor_d.txt"
+    },
+    "haruki": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/haruki/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/haruki/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/haruki/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/haruki/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_haruki.txt"
+    },
+    "yuki": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/yuki/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/yuki/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/yuki/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/yuki/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_yuki.txt"
+    },
+    "kenji": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/kenji/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/kenji/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/kenji/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/kenji/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_kenji.txt"
+    },
+    "mei": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/mei/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/mei/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/mei/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/mei/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_mei.txt"
+    },
+    "tomoko": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/tomoko/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/tomoko/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/tomoko/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/tomoko/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_tomoko.txt"
+    },
+    "ryo": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/ryo/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/ryo/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/ryo/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/ryo/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_ryo.txt"
+    },
+    "supplier": {
+      "system_prompt": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/supplier/system_prompt.txt",
+      "current_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/supplier/current_context.txt",
+      "full_context": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/supplier/full_context.txt",
+      "combined": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/agent_contexts/supplier/combined.txt",
+      "legacy_transcript": "/Users/kenneth/Desktop/lab/projects/research/miniverse/experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e_supplier.txt"
+    }
+  }
+}

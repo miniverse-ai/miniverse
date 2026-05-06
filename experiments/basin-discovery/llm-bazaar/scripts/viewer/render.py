@@ -776,8 +776,9 @@ def load_clean_judgments(cj_dir: Path) -> tuple[dict[str, dict], dict | None]:
             current["coding_notes"].extend(notes)
         elif notes:
             current["coding_notes"].append(str(notes))
-        current["_sources"].append(str(f))
-        current["_source"] = str(f)
+        source = os.path.relpath(f, Path.cwd())
+        current["_sources"].append(source)
+        current["_source"] = source
     return judgments, run_health
 
 
@@ -1018,8 +1019,8 @@ def build_viewer_data(
         "has_event_log": rp.event_log_jsonl is not None,
         "has_clean_judgments": bool(judgments),
         "has_run_health": run_health is not None,
-        "judgments_source": str(cj_dir_used) if cj_dir_used else None,
-        "analysis_dir": str(analysis_dir) if analysis_dir else None,
+        "judgments_source": os.path.relpath(cj_dir_used, Path.cwd()) if cj_dir_used else None,
+        "analysis_dir": os.path.relpath(analysis_dir, Path.cwd()) if analysis_dir else None,
     }
 
     return {

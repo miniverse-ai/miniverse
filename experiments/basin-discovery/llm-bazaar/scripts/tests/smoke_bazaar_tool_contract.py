@@ -32,7 +32,8 @@ Available actions:
 
 Structured response format:
 Fields: think, action, target, parameters, respond.
-- action must be one exact name from Available actions.
+- If you use an action, action must be one exact name from Available actions.
+- If you only speak publicly, set action to null.
 - Public speech goes in respond and is heard by the market.
 - Public speech can stand alone; do not pair it with an action unless you also need that tool.
 - If the user asks for only public speech, set action, target, and parameters to null and put the utterance in respond.

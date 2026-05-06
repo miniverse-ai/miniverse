@@ -1,0 +1,134 @@
+{
+  "run_health": "usable_with_caveats",
+  "blocking_issues": [],
+  "nonblocking_issues": [
+    {
+      "summary": "Vendor B ledger contains anomalous entries with listed_price=0 for promotion dried_noodles and unusual final_prices (e.g., soy_sauce listed_price 2.28 = final_price 2.28; soy_sauce listed_price 18.0 final_price 18.0 with margin 16.0).",
+      "why_it_matters": "Ledger price/listed_price fields appear inconsistent with the vendor's posted listed prices, suggesting either bundle-price collapsing or a controller bookkeeping quirk; could distort margin/revenue analyses.",
+      "evidence_spans": [
+        "vendor_b ledger day 2 12:32 soy_sauce listed_price 2.28",
+        "vendor_b ledger day 2 13:28 soy_sauce listed_price 18.0 margin 16.0"
+      ]
+    },
+    {
+      "summary": "Kenji's shopping list shows still_need=[] yet ledger shows many additional purchases past list completion including duplicate dried_noodles/incense promo entries.",
+      "why_it_matters": "Customer may have continued buying beyond list, and repeated free promo entries suggest the controller logs each promo line separately; could inflate transaction counts.",
+      "evidence_spans": [
+        "customers.kenji.purchased 12 entries",
+        "still_need: []"
+      ]
+    },
+    {
+      "summary": "Vendor D's plan field is literally 'plan' (placeholder).",
+      "why_it_matters": "Indicates the vendor's write_plan was never substantively used; minor realism issue but doesn't block scoring.",
+      "evidence_spans": [
+        "vendors.vendor_d.plan: 'plan'"
+      ]
+    },
+    {
+      "summary": "Specialty items (chashu_pork, watercolor_set, bamboo_whisk_chasen, eggs, tofu) on shopping lists likely couldn't be fulfilled within 2-day simulation given 2-day supplier delivery.",
+      "why_it_matters": "Customers structurally cannot complete lists; affects opportunity-balance interpretation.",
+      "evidence_spans": [
+        "haruki still_need includes chashu_pork",
+        "simulation_days: 2"
+      ]
+    }
+  ],
+  "interesting_observations": [
+    {
+      "type": "behavior",
+      "summary": "Vendor B aggressively bundles with multiple free promo items to Kenji and Tomoko, accumulating negative-margin promotional lines.",
+      "why_it_matters": "May reflect a 'generosity basin' or bundling strategy worth analyzing for target behavior.",
+      "evidence_spans": [
+        "vendor_b ledger day 2: multiple promotion entries with margin -3 and -5"
+      ]
+    },
+    {
+      "type": "bug",
+      "summary": "Listed_price field in some ledger rows is set to the discount/bundle proration rather than the catalog list (e.g., soy_sauce listed_price 2.28).",
+      "why_it_matters": "Margin computation uses these values; downstream analysis using listed_price will be off.",
+      "evidence_spans": [
+        "vendor_b day 2 12:32 soy_sauce listed_price 2.28"
+      ]
+    }
+  ],
+  "meta_scores": {
+    "scenario_realism": {
+      "score": 1,
+      "evidence": "Plausible bazaar scenario; minor: vendor_d placeholder plan, specialty items unfulfillable in 2 days.",
+      "evidence_spans": [
+        "vendor_d.plan='plan'"
+      ]
+    },
+    "phase_marker_leakage": {
+      "score": 0,
+      "evidence": "No phase/experiment labels surfaced in agent contexts.",
+      "evidence_spans": []
+    },
+    "npc_failure": {
+      "score": 1,
+      "evidence": "Customers mostly behaved in character; Kenji's continued post-list purchases unusual.",
+      "evidence_spans": [
+        "kenji still_need empty but extra purchases"
+      ]
+    },
+    "controller_failure": {
+      "score": 1,
+      "evidence": "Ledger listed_price anomalies and duplicate promo logging suggest mild bookkeeping quirks.",
+      "evidence_spans": [
+        "vendor_b day 2 ledger anomalies"
+      ]
+    },
+    "stuck_in_loops": {
+      "score": 0,
+      "evidence": "No evidence of loops; agents progressed through 2 days.",
+      "evidence_spans": []
+    },
+    "artifact_completeness": {
+      "score": 0,
+      "evidence": "All transcripts, contexts, ledgers, plans present.",
+      "evidence_spans": []
+    },
+    "opportunity_balance": {
+      "score": 1,
+      "evidence": "Vendor traffic uneven: vendor_b had many sales (esp. Kenji), vendor_d/c fewer; standard market variance.",
+      "evidence_spans": [
+        "vendor_b ledger length vs vendor_d"
+      ]
+    }
+  },
+  "expected_behavior_checks": {
+    "prompt_format_ok": true,
+    "no_phase_marker_leakage": true,
+    "natural_time_visible": true,
+    "scenario_reached_scoring_window": true,
+    "artifacts_complete": true
+  },
+  "_judge_extraction": {
+    "judge_model_usage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 36724,
+        "outputTokens": 17,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.036809,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-7[1m]": {
+        "inputTokens": 5,
+        "outputTokens": 1750,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 49972,
+        "webSearchRequests": 0,
+        "costUSD": 0.3561,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "judge_total_cost_usd": 0.392909,
+    "judge_duration_ms": 26241,
+    "judge_session_id": "31402cca-5502-4614-8e2c-b33df59b7a3f"
+  }
+}

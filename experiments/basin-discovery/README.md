@@ -4,8 +4,8 @@ Executable Miniverse experiment for the OpenAI red-team Basin Discovery presenta
 
 The maintained scenario in this project is `llm-bazaar/`: a multi-agent market with four vendor agents, customer agents, a wholesale supplier, daily fees, planning/dream memory, and post-run behavioral judging.
 
-Source-of-truth research context:
-`/Users/kenneth/Desktop/lab/notes/shoshin-codex/projects/basin-discovery/PROJECT_CONTEXT.md`
+Source-of-truth research context lives in the private notes vault and is not
+required to run this experiment.
 
 ## Layout
 
@@ -25,36 +25,37 @@ Raw run outputs under `llm-bazaar/outputs/` and logs under `test-runs/` are igno
 
 ## Open The Curated Viewer
 
-This branch includes one curated result artifact: a 3-session GPT-5-mini persona run with dream-memory enabled.
+This branch includes a curated viewer for the presentation-backed Bazaar runs:
 
-From `/Users/kenneth/Desktop/lab/projects/research/miniverse`:
+- Baseline - GPT-5-mini neutral vendors
+- Experiment 1 - mixed model neutral vendors
+- Experiment 2 - GPT-4o persona sweep
 
-```bash
-open experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html
-```
-
-If your browser blocks local sidecar JSON loading from `file://`, serve the repo locally:
+From the Miniverse repo root:
 
 ```bash
-python -m http.server 8765
-open http://localhost:8765/experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html
+python experiments/basin-discovery/llm-bazaar/scripts/viewer/open_viewer.py
 ```
 
-To regenerate the viewer from the committed compact run data and atomic judgments:
+That command starts a local static server and opens a selector page with a readable dropdown for the curated runs. The committed artifacts intentionally omit bulky `agent_contexts/` exports; the viewer is backed by compact `run_data.json`, atomic judgment JSON, metric CSVs, and `viewer_data.json`.
+
+To regenerate the curated viewers from the committed compact run data and atomic judgments:
 
 ```bash
 uv run python experiments/basin-discovery/llm-bazaar/scripts/viewer/render.py \
-  --run experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b \
-  --judgments-dir experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/judgments/judge-atomic-observations-20260506 \
-  --out experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer.html \
-  --data-out experiments/basin-discovery/llm-bazaar/outputs/gpt4o-personas-a_gpt5mini-personas-a-3day-4min-memoryjson_cef3f66b/viewer_data.json
+  --run experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e \
+  --judgments-dir experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/judgments/judge-atomic-observations-20260506-rerun \
+  --metrics-csv experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/judgments/judge-atomic-observations-20260506-rerun/metrics/gpt5mini-neutral-baseline-vendor-metrics.csv \
+  --out experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/viewer.html \
+  --data-out experiments/basin-discovery/llm-bazaar/outputs/baseline_gpt-5-mini_81f92e6e/viewer_data.json \
+  --title "Baseline: GPT-5-mini neutral vendors"
 ```
 
-The committed run intentionally omits bulky `agent_contexts/` exports. The viewer is backed by `run_data.json`, the atomic judgment JSON files, metric CSVs, and `viewer_data.json`.
+Use the same renderer command for additional runs by changing `--run`, `--judgments-dir`, `--metrics-csv`, and `--title`.
 
 ## Run A Bazaar Simulation
 
-From `/Users/kenneth/Desktop/lab/projects/research/miniverse`:
+From the Miniverse repo root:
 
 ```bash
 ts=$(date +%Y%m%d-%H%M%S)

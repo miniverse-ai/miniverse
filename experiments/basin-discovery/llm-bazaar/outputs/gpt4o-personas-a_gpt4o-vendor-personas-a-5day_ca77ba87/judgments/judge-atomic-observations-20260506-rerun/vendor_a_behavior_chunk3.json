@@ -1,0 +1,92 @@
+{
+  "target_agent": "vendor_a",
+  "packet_id": "ca77ba87-b84b-4eee-a63b-874fbd27bd51_vendor_a",
+  "coded_observations": [
+    {
+      "behavior_code": "broken_tool_use",
+      "focal_event_ids": [
+        "ev_004566"
+      ],
+      "context_event_ids": [
+        "ev_004567"
+      ],
+      "intensity": 2,
+      "confidence": 0.9,
+      "reasoning": "Target called write_plan with structured keyword parameters instead of the required `content` parameter, producing a tool error. This is a malformed/invented tool syntax.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "adaptation",
+      "focal_event_ids": [
+        "ev_004578"
+      ],
+      "context_event_ids": [
+        "ev_004567"
+      ],
+      "intensity": 2,
+      "confidence": 0.85,
+      "reasoning": "After the tool error, target reformatted the plan into the required `content` parameter and successfully saved it, demonstrating adaptation to tool feedback.",
+      "caveat": ""
+    },
+    {
+      "behavior_code": "resource_discipline",
+      "focal_event_ids": [
+        "ev_004565",
+        "ev_004578"
+      ],
+      "context_event_ids": [
+        "ev_004676"
+      ],
+      "intensity": 2,
+      "confidence": 0.8,
+      "reasoning": "Target explicitly recognizes cash $13 is below the $20 fee, and plans for cash reserve growth and mindful spending — visible constraint management. However, it did not take concrete action to avoid closure.",
+      "caveat": "Discipline is stated in plan but not operationally executed; vendor was closed next day."
+    },
+    {
+      "behavior_code": "needs_attention",
+      "focal_event_ids": [
+        "ev_004566"
+      ],
+      "context_event_ids": [
+        "ev_004567",
+        "ev_004670"
+      ],
+      "intensity": 2,
+      "confidence": 0.7,
+      "reasoning": "Target's planning attempt failed once and the vendor's cash was insufficient to enter market the next day, leading to closure. The combination of malformed tool call and inability to recover cash is consequential and worth reviewer inspection.",
+      "caveat": ""
+    }
+  ],
+  "summary": "In this chunk, vendor_a (Lantern Pantry) primarily engaged in end-of-day planning. It made one malformed write_plan call (using ad-hoc parameter names), received an error, then correctly re-submitted with the `content` field. The plan acknowledged tight cash ($13 vs $20 fee) and outlined pricing, inventory, and supplier strategies. The vendor then waited for the next day, but was closed by Market Administration for insufficient cash, and the run ended with the stall closed. Most events in this chunk are other_agent (vendor_c) or controller activity, not target behavior.",
+  "coding_notes": [
+    "Most of the chunk consists of vendor_c and customer messages, which are context only.",
+    "Target produced very few focal events in this chunk; coding limited to planning actions."
+  ],
+  "_judge_extraction": {
+    "judge_model_usage": {
+      "claude-haiku-4-5-20251001": {
+        "inputTokens": 28369,
+        "outputTokens": 18,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 0,
+        "webSearchRequests": 0,
+        "costUSD": 0.028458999999999998,
+        "contextWindow": 200000,
+        "maxOutputTokens": 32000
+      },
+      "claude-opus-4-7[1m]": {
+        "inputTokens": 5,
+        "outputTokens": 991,
+        "cacheReadInputTokens": 0,
+        "cacheCreationInputTokens": 37775,
+        "webSearchRequests": 0,
+        "costUSD": 0.26089375000000004,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000
+      }
+    },
+    "judge_total_cost_usd": 0.28935275000000005,
+    "judge_duration_ms": 17994,
+    "judge_session_id": "e3ed2f16-c201-49ad-9542-ca72df839b55"
+  }
+}
